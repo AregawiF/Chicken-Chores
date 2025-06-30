@@ -113,11 +113,11 @@
       { id: 4, name: "Refill Water", frequency: "Daily", assignee: "Kid 2", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Check and refill water containers", emoji: "💧", active: true },
       { id: 5, name: "Clean Water Bowl", frequency: "Custom", assignee: "Mom", points: 5, daysOfWeek: ["Sunday"], notes: "Scrub and sanitize water containers", emoji: "🧽", active: true },
       { id: 6, name: "Check Feed Storage", frequency: "Custom", assignee: "Dad", points: 5, daysOfWeek: ["Friday"], notes: "Verify feed levels and quality", emoji: "📦", active: true },
-      { id: 7, name: "Supervised Free Range", frequency: "Daily", assignee: "Kid 1", points: 10, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Let chickens roam in yard with supervision", emoji: "🐓", active: true },
-      { id: 8, name: "Check for Illness", frequency: "Daily", assignee: "Dad", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Observe chickens for signs of illness", emoji: "🔍", active: true },
+      { id: 7, name: "Supervised Free Range", frequency: "Daily", assignee: "Kid 1", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Let chickens roam in yard with supervision", emoji: "🐓", active: true },
+      { id: 8, name: "Check for Illness", frequency: "Daily", assignee: "Mom", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Observe chickens for signs of illness", emoji: "🔍", active: true },
       { id: 9, name: "Secure Coop at Night", frequency: "Daily", assignee: "Dad", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Close and lock coop doors for safety", emoji: "🔒", active: true },
       { id: 10, name: "Replace Bedding", frequency: "Custom", assignee: "Mom", points: 5, daysOfWeek: ["Wednesday"], notes: "Add fresh bedding material to coop", emoji: "🛏️", active: true },
-      { id: 11, name: "Feed Dogs", frequency: "Daily", assignee: "Kid 1", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Fill dog food bowls", emoji: "🐕", active: true }
+      { id: 11, name: "Feed Dogs", frequency: "Daily", assignee: "Kid 2", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Fill dog food bowls", emoji: "🐕", active: true }
     ];
 
     const initialUsers = [
@@ -134,11 +134,11 @@
         { name: "Refill Water", points: 5, frequency: "Daily", notes: "Check and refill water containers", emoji: "💧", active: true, assignee: "Kid 2" },
         { name: "Clean Water Bowl", points: 5, frequency: "Custom", daysOfWeek: ["Sunday"], notes: "Scrub and sanitize water containers", emoji: "🧽", active: true, assignee: "Mom" },
         { name: "Check Feed Storage", points: 5, frequency: "Custom", daysOfWeek: ["Friday"], notes: "Verify feed levels and quality", emoji: "📦", active: true, assignee: "Dad" },
-        { name: "Supervised Free Range", points: 10, frequency: "Daily", notes: "Let chickens roam in yard with supervision", emoji: "🐓", active: true, assignee: "Kid 1" },
-        { name: "Check for Illness", points: 5, frequency: "Daily", notes: "Observe chickens for signs of illness", emoji: "🔍", active: true, assignee: "Dad" },
+        { name: "Supervised Free Range", points: 5, frequency: "Daily", notes: "Let chickens roam in yard with supervision", emoji: "🐓", active: true, assignee: "Kid 1" },
+        { name: "Check for Illness", points: 5, frequency: "Daily", notes: "Observe chickens for signs of illness", emoji: "🔍", active: true, assignee: "Mom" },
         { name: "Secure Coop at Night", points: 5, frequency: "Daily", notes: "Close and lock coop doors for safety", emoji: "🔒", active: true, assignee: "Dad" },
         { name: "Replace Bedding", points: 5, frequency: "Custom", daysOfWeek: ["Wednesday"], notes: "Add fresh bedding material to coop", emoji: "🛏️", active: true, assignee: "Mom" },
-        { name: "Feed Dogs", points: 5, frequency: "Daily", notes: "Fill dog food bowls", emoji: "🐕", active: true, assignee: "Kid 1" }
+        { name: "Feed Dogs", points: 5, frequency: "Daily", notes: "Fill dog food bowls", emoji: "🐕", active: true, assignee: "Kid 2" }
       ];
 
     // Comprehensive categorized emoji system
@@ -284,8 +284,29 @@
           const storedLastReset = localStorage.getItem("lastResetDate");
 
           if (storedLastReset && storedLastReset !== today) {
-            const dateKey = getDateKey(new Date());
-            setTaskCompletions(prev => ({ ...prev, [dateKey]: {} }));
+            // For guest users, reset everything at midnight
+            if (!isAuthenticated) {
+              // Clear all guest data
+              localStorage.removeItem("tasks");
+              localStorage.removeItem("users");
+              localStorage.removeItem("customBadges");
+              localStorage.removeItem("taskCompletions");
+              localStorage.removeItem("lastWeeklyReset");
+              
+              // Reset to initial state
+              setTasks(initialTasks);
+              setUsers(initialUsers);
+              setCustomBadges({});
+              setTaskCompletions({});
+              setLastWeeklyReset(null);
+              
+              console.log("Guest mode data reset at midnight");
+            } else {
+              // For authenticated users, only reset daily task completions
+              const dateKey = getDateKey(new Date());
+              setTaskCompletions(prev => ({ ...prev, [dateKey]: {} }));
+            }
+            
             setLastResetDate(today);
             localStorage.setItem("lastResetDate", today);
           }
@@ -304,7 +325,7 @@
         }, msUntilMidnight);
 
         return () => clearTimeout(midnightTimeout);
-      }, [tasks]);
+      }, [tasks, isAuthenticated]);
 
       const getWeekStart = (date) => {
         const day = date.getDay();
@@ -1816,15 +1837,59 @@
                         </span>
                       </div>
                       <p className="text-xs text-gray-600 mb-3">
-                        You're using Chicken Chores as a guest. Your data is saved locally but won't sync across devices.
+                        You're using Chicken Chores as a guest. Your data is saved locally but won't sync across devices and resets daily at midnight.
                       </p>
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3">
                         <h5 className="text-xs font-semibold text-yellow-800 mb-1">Why create an account?</h5>
                         <ul className="text-xs text-yellow-700 space-y-1">
                           <li>• Save progress across devices</li>
                           <li>• Backup your family's tasks</li>
                           <li>• Access from anywhere</li>
+                          <li>• Keep data permanently (no daily reset)</li>
                         </ul>
+                      </div>
+
+                      {/* Manual Reset for Guest Users */}
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
+                        <h5 className="text-xs font-semibold text-red-800 mb-2">🔄 Reset Everything</h5>
+                        <p className="text-xs text-red-700 mb-2">
+                          Restore all default tasks and family members. This will delete all your current progress!
+                        </p>
+                        <button
+                          onClick={() => {
+                            if (confirm("Are you sure you want to reset everything? This will restore all default tasks and family members, and delete all your current progress. This action cannot be undone!")) {
+                              // Clear all guest data
+                              localStorage.removeItem("tasks");
+                              localStorage.removeItem("users");
+                              localStorage.removeItem("customBadges");
+                              localStorage.removeItem("taskCompletions");
+                              localStorage.removeItem("lastWeeklyReset");
+                              localStorage.removeItem("lastResetDate");
+                              
+                              // Reset to initial state
+                              setTasks(initialTasks);
+                              setUsers(initialUsers);
+                              setCustomBadges({});
+                              setTaskCompletions({});
+                              setLastWeeklyReset(null);
+                              setLastResetDate(new Date().toDateString());
+                              
+                              // Reset UI state
+                              setEditingTask(null);
+                              setEditedTaskData({});
+                              setEditingProfile(null);
+                              setSelectedProfile(null);
+                              
+                              alert("✅ Everything has been reset to defaults!");
+                              
+                              // Navigate back to tasks page
+                              navigateToPage(PAGES.TASKS);
+                            }
+                          }}
+                          className="w-full bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+                        >
+                          🔄 Reset to Defaults
+                        </button>
                       </div>
                     </div>
 
@@ -2115,11 +2180,17 @@
                           }}
                           className="bg-transparent text-lg font-semibold text-gray-800 border-none outline-none cursor-pointer pr-6 appearance-none"
                         >
-                          <option value="Family">Family</option>
-                          {users.map(user => (
-                            <option key={user.name} value={user.name}>{user.name}</option>
-                          ))}
-                          <option value="Add Profile">+ Add Profile</option>
+                          <option value="Family">👨‍👩‍👧‍👦 Family</option>
+                          {users.map((user, index) => {
+                            const avatarEmojis = ["👩", "👨", "🧑", "👦"];
+                            const userAvatar = user.avatar || avatarEmojis[index] || "👤";
+                            return (
+                              <option key={user.name} value={user.name}>
+                                {userAvatar} {user.name}
+                              </option>
+                            );
+                          })}
+                          <option value="Add Profile">➕ Add Profile</option>
                         </select>
                         <div className="absolute right-0 top-1/2 transform -translate-y-1/2 pointer-events-none">
                           <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3522,9 +3593,15 @@
                             onChange={(e) => setNewTask({ ...newTask, assignee: e.target.value })}
                             className="bg-transparent text-gray-600 border-none outline-none pr-6 appearance-none"
                           >
-                            {users.map(u => (
-                              <option key={u.name} value={u.name} className="bg-white">{u.name}</option>
-                            ))}
+                            {users.map((u, index) => {
+                              const avatarEmojis = ["👩", "👨", "🧑", "👦"];
+                              const userAvatar = u.avatar || avatarEmojis[index] || "👤";
+                              return (
+                                <option key={u.name} value={u.name} className="bg-white">
+                                  {userAvatar} {u.name}
+                                </option>
+                              );
+                            })}
                           </select>
                           <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -3727,9 +3804,15 @@
                                   onChange={(e) => setEditedTaskData({ ...editedTaskData, assignee: e.target.value })}
                                   className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-600 pr-8 appearance-none text-sm sm:text-base min-h-[40px]"
                                 >
-                                  {users.map(u => (
-                                    <option key={u.name} value={u.name} className="bg-white">{u.name}</option>
-                                  ))}
+                                  {users.map((u, index) => {
+                                    const avatarEmojis = ["👩", "👨", "🧑", "👦"];
+                                    const userAvatar = u.avatar || avatarEmojis[index] || "👤";
+                                    return (
+                                      <option key={u.name} value={u.name} className="bg-white">
+                                        {userAvatar} {u.name}
+                                      </option>
+                                    );
+                                  })}
                                 </select>
                                 <svg className="w-4 h-4 text-gray-600 -ml-6 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
