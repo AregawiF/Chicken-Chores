@@ -58,7 +58,8 @@
 
   </script>
 </head>
-<body class="bg-green-50 min-h-screen">
+<body class="min-h-screen" style="background-color: #FAF6EF;">
+</body>
   <div id="root" class="container mx-auto p-2 sm:p-4"></div>
 
   <script type="text/babel">
@@ -205,7 +206,7 @@
     const App = () => {
       const [tasks, setTasks] = useState(() => JSON.parse(localStorage.getItem("tasks")) || initialTasks);
       const [users, setUsers] = useState(() => JSON.parse(localStorage.getItem("users")) || initialUsers);
-      const [newTask, setNewTask] = useState({ name: "", frequency: "Daily", assignee: "Mom", points: 0, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "", startDate: new Date().toISOString().split('T')[0], emoji: "", active: true });
+      const [newTask, setNewTask] = useState({ name: "", frequency: "Daily", assignee: "Mom", points: 0, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "", startDate: new Date().toISOString().split('T')[0], emoji: "", active: true, timeOfDay: "Anytime" });
       const [showPresets, setShowPresets] = useState(false);
 
       // Page routing and onboarding state
@@ -363,7 +364,7 @@
         if (e) e.preventDefault();
         if (!newTask.name || newTask.daysOfWeek.length === 0) return;
         setTasks([...tasks, { id: Date.now(), ...newTask }]);
-        setNewTask({ name: "", frequency: "Daily", assignee: "Mom", points: 0, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "", startDate: new Date().toISOString().split('T')[0], emoji: "", active: true });
+        setNewTask({ name: "", frequency: "Daily", assignee: "Mom", points: 0, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "", startDate: new Date().toISOString().split('T')[0], emoji: "", active: true, timeOfDay: "Anytime" });
         setShowPresets(false);
         navigateToPage(PAGES.TASKS);
       };
@@ -377,7 +378,8 @@
           notes: preset.notes,
           emoji: preset.emoji,
           active: preset.active,
-          daysOfWeek: preset.daysOfWeek || (preset.frequency === "Daily" ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] : ["Monday"])
+          daysOfWeek: preset.daysOfWeek || (preset.frequency === "Daily" ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] : ["Monday"]),
+          timeOfDay: preset.timeOfDay || "Anytime"
         });
         setShowPresets(false);
       };
@@ -386,6 +388,15 @@
         return tasks.filter(task => {
           // Only include active tasks
           if (task.active === false) return false;
+
+          // Handle "Once" frequency - only show if it matches the start date
+          if (task.frequency === "Once") {
+            const taskStartDate = new Date(task.startDate);
+            const currentDate = new Date(selectedDate);
+            taskStartDate.setHours(0, 0, 0, 0);
+            currentDate.setHours(0, 0, 0, 0);
+            return taskStartDate.getTime() === currentDate.getTime();
+          }
 
           if (!task.daysOfWeek) {
             return task.frequency === "Daily" || dayOfWeek === selectedDate.toLocaleDateString('en-US', { weekday: 'long' });
@@ -2109,7 +2120,7 @@
       }
 
       return (
-        <div className={`bg-white rounded-lg shadow-lg p-4 sm:p-6 transition-opacity duration-150 ${showPageTransition ? 'opacity-50' : 'opacity-100'}`}>
+        <div className={`transition-opacity duration-150 ${showPageTransition ? 'opacity-50' : 'opacity-100'}`}>
 
           {/* Emoji Picker Modal */}
           <EmojiPicker />
@@ -2279,11 +2290,12 @@
                             onClick={() => setSelectedDate(new Date(day))}
                             className={`flex flex-col items-center p-2 rounded-xl min-w-[40px] ${
                               isSelected 
-                                ? "bg-orange-500 text-white" 
+                                ? "text-white" 
                                 : isToday 
                                 ? "bg-orange-100 text-orange-600 ring-2 ring-orange-300" 
                                 : "text-gray-500 hover:bg-gray-100"
                             }`}
+                            style={isSelected ? { backgroundColor: '#4A90E2' } : {}}
                           >
                             <div className="text-xs font-medium mb-1">{dayNames[i]}</div>
                             <div className="text-lg font-bold">{dayNumber}</div>
@@ -2350,14 +2362,19 @@
                                   )}
 
                                   <span className="text-gray-500">
-                                    {task.daysOfWeek && task.daysOfWeek.length === 7 
-                                      ? "Daily" 
-                                      : task.daysOfWeek 
-                                        ? task.daysOfWeek.map(d => d.slice(0, 3)).join(", ")
-                                        : task.frequency === "Daily" 
-                                          ? "Daily" 
-                                          : "Custom"
+                                    {task.frequency === "Once" 
+                                      ? "Once" 
+                                      : task.daysOfWeek && task.daysOfWeek.length === 7 
+                                        ? "Daily" 
+                                        : task.daysOfWeek 
+                                          ? task.daysOfWeek.map(d => d.slice(0, 3)).join(", ")
+                                          : task.frequency === "Daily" 
+                                            ? "Daily" 
+                                            : "Specific"
                                     }
+                                    {task.timeOfDay && task.timeOfDay !== "Anytime" && (
+                                      <span className="ml-1">• {task.timeOfDay}</span>
+                                    )}
                                   </span>
                                 </div>
                               </div>
@@ -3532,13 +3549,15 @@
                               setNewTask({ 
                                 ...newTask, 
                                 frequency: freq,
-                                daysOfWeek: freq === "Daily" ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] : ["Monday"] 
+                                daysOfWeek: freq === "Daily" ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] : 
+                                          freq === "Once" ? [] : ["Monday"] 
                               });
                             }}
                             className="bg-transparent text-gray-600 border-none outline-none pr-6 appearance-none"
                           >
                             <option value="Daily" className="bg-white">Every Day</option>
-                            <option value="Custom" className="bg-white">Custom Days</option>
+                            <option value="Specific" className="bg-white">Specific Days</option>
+                            <option value="Once" className="bg-white">Once</option>
                           </select>
                           <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -3546,8 +3565,8 @@
                         </div>
                       </div>
 
-                      {/* Custom Days Selection */}
-                      {newTask.frequency === "Custom" && (
+                      {/* Specific Days Selection */}
+                      {newTask.frequency === "Specific" && (
                         <div>
                           <label className="block text-gray-600 text-sm font-medium mb-3">SELECT DAYS</label>
                           <div className="grid grid-cols-7 gap-2">
@@ -3583,6 +3602,26 @@
                           </div>
                         </div>
                       )}
+
+                      {/* Time of Day */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-800 font-medium">Time of Day</span>
+                        <div className="flex items-center">
+                          <select
+                            value={newTask.timeOfDay || "Anytime"}
+                            onChange={(e) => setNewTask({ ...newTask, timeOfDay: e.target.value })}
+                            className="bg-transparent text-gray-600 border-none outline-none pr-6 appearance-none"
+                          >
+                            <option value="Anytime" className="bg-white">Anytime</option>
+                            <option value="Morning" className="bg-white">Morning</option>
+                            <option value="Afternoon" className="bg-white">Afternoon</option>
+                            <option value="Evening" className="bg-white">Evening</option>
+                          </select>
+                          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                      </div>
 
                       {/* Assignee */}
                       <div className="flex items-center justify-between">
@@ -3742,13 +3781,15 @@
                                       frequency: freq,
                                       daysOfWeek: freq === "Daily" ? 
                                         ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] : 
+                                        freq === "Once" ? [] :
                                         (editedTaskData.daysOfWeek || task.daysOfWeek || ["Monday"])
                                     });
                                   }}
                                   className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-600 pr-8 appearance-none text-sm sm:text-base min-h-[40px]"
                                 >
                                   <option value="Daily" className="bg-white">Every Day</option>
-                                  <option value="Custom" className="bg-white">Custom Days</option>
+                                  <option value="Specific" className="bg-white">Specific Days</option>
+                                  <option value="Once" className="bg-white">Once</option>
                                 </select>
                                 <svg className="w-4 h-4 text-gray-600 -ml-6 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -3756,8 +3797,8 @@
                               </div>
                             </div>
 
-                            {/* Custom Days Selection */}
-                            {(editedTaskData.frequency || task.frequency) === "Custom" && (
+                            {/* Specific Days Selection */}
+                            {(editedTaskData.frequency || task.frequency) === "Specific" && (
                               <div>
                                 <label className="block text-gray-600 text-sm font-medium mb-3">SELECT DAYS</label>
                                 <div className="grid grid-cols-7 gap-1 sm:gap-2">
@@ -3794,6 +3835,26 @@
                                 </div>
                               </div>
                             )}
+
+                            {/* Time of Day */}
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
+                              <span className="text-gray-800 font-medium text-sm sm:text-base">Time of Day</span>
+                              <div className="flex items-center">
+                                <select
+                                  value={editedTaskData.timeOfDay || task.timeOfDay || "Anytime"}
+                                  onChange={(e) => setEditedTaskData({ ...editedTaskData, timeOfDay: e.target.value })}
+                                  className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-600 pr-8 appearance-none text-sm sm:text-base min-h-[40px]"
+                                >
+                                  <option value="Anytime" className="bg-white">Anytime</option>
+                                  <option value="Morning" className="bg-white">Morning</option>
+                                  <option value="Afternoon" className="bg-white">Afternoon</option>
+                                  <option value="Evening" className="bg-white">Evening</option>
+                                </select>
+                                <svg className="w-4 h-4 text-gray-600 -ml-6 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </div>
+                            </div>
 
                             {/* Assignee */}
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
@@ -3910,8 +3971,14 @@
 
                             <div className="text-xs sm:text-sm text-gray-600 mb-2 bg-gray-50 p-2 rounded-lg">
                               <div className="font-medium text-gray-700 mb-1">Schedule</div>
-                              <div>{task.frequency === "Daily" ? "Every day" : 
-                                `${task.daysOfWeek?.join(", ") || "Custom days"}`}</div>
+                              <div>
+                                {task.frequency === "Once" ? "Once" :
+                                 task.frequency === "Daily" ? "Every day" : 
+                                 `${task.daysOfWeek?.join(", ") || "Specific days"}`}
+                                {task.timeOfDay && task.timeOfDay !== "Anytime" && (
+                                  <span className="ml-2">• {task.timeOfDay}</span>
+                                )}
+                              </div>
                             </div>
 
                             {task.notes && (
