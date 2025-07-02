@@ -2337,10 +2337,10 @@
                   };
 
                   const timeIcons = {
-                    "Morning": "🌅",
-                    "Afternoon": "☀️", 
-                    "Evening": "🌙",
-                    "Anytime": "⏰"
+                    "Morning": "",
+                    "Afternoon": "", 
+                    "Evening": "",
+                    "Anytime": ""
                   };
 
                   return (
@@ -2353,9 +2353,9 @@
                             {/* Time Section Header */}
                             <div className="flex items-center mb-3">
                               <span className="text-2xl mr-2">{timeIcons[timeOfDay]}</span>
-                              <h3 className="text-lg font-semibold text-gray-800">{timeOfDay}</h3>
+                              <h3 className="text-sm font-medium text-gray-500">{timeOfDay}</h3>
                               <div className="flex-1 h-px bg-gray-200 ml-3"></div>
-                              <span className="text-sm text-gray-500 ml-3">
+                              <span className="text-xs text-gray-400 ml-3">
                                 {tasks.filter(t => isTaskCompleted(t.id, selectedDate)).length}/{tasks.length}
                               </span>
                             </div>
