@@ -1431,7 +1431,7 @@
                                   <label className="block text-xs font-medium text-gray-700 mb-1">Name:</label>
                                   <input
                                     type="text"
-                                    value={editingProfile === user.name ? (editedProfileData.name || user.name) : user.name}
+                                    value={editedProfileData.name !== undefined ? editedProfileData.name : user.name}
                                     onChange={(e) => setEditedProfileData({ ...editedProfileData, name: e.target.value })}
                                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-purple-500 focus:outline-none"
                                   />
@@ -1597,7 +1597,7 @@
                         <label className="block text-xs font-medium text-gray-700 mb-1">Name:</label>
                         <input
                           type="text"
-                          value={newMemberName}
+                          value={newMemberName || ''}
                           onChange={(e) => setNewMemberName(e.target.value)}
                           placeholder="Enter family member's name"
                           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-purple-500 focus:outline-none"
@@ -2315,11 +2315,11 @@
               <div className="mb-4">
                 {(() => {
                   const allTodayTasks = getTasksForDay(getCurrentDayName());
-                  const todayTasks = !selectedProfile || selectedProfile === "Family" 
+                  const filteredTasks = !selectedProfile || selectedProfile === "Family" 
                     ? allTodayTasks 
                     : allTodayTasks.filter(t => t.assignee === selectedProfile);
 
-                  if (todayTasks.length === 0) {
+                  if (filteredTasks.length === 0) {
                     return (
                       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center text-gray-500">
                         <div className="text-3xl mb-2">🎉</div>
@@ -2328,67 +2328,87 @@
                     );
                   }
 
+                  // Group tasks by time of day
+                  const tasksByTime = {
+                    "Morning": filteredTasks.filter(t => t.timeOfDay === "Morning"),
+                    "Afternoon": filteredTasks.filter(t => t.timeOfDay === "Afternoon"),
+                    "Evening": filteredTasks.filter(t => t.timeOfDay === "Evening"),
+                    "Anytime": filteredTasks.filter(t => !t.timeOfDay || t.timeOfDay === "Anytime")
+                  };
+
+                  const timeIcons = {
+                    "Morning": "🌅",
+                    "Afternoon": "☀️", 
+                    "Evening": "🌙",
+                    "Anytime": "⏰"
+                  };
+
                   return (
-                    <div className="space-y-3">
-                      {todayTasks.map(task => (
-                        <div key={task.id} className={`rounded-2xl shadow-sm border p-4 ${
-                          isTaskCompleted(task.id, selectedDate) 
-                            ? "bg-green-100 border-green-300" 
-                            : "bg-white border-gray-100"
-                        }`}>
-                          <div className="flex items-center">
-                            <button
-                              onClick={() => toggleTask(task)}
-                              disabled={isNotToday(selectedDate)}
-                              className={`w-8 h-8 rounded-full mr-4 flex items-center justify-center ${
-                                isTaskCompleted(task.id, selectedDate)
-                                  ? "bg-green-500 text-white"
-                                  : "bg-gray-200 text-gray-400"
-                              } ${isNotToday(selectedDate) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                            >
-                              {isTaskCompleted(task.id, selectedDate) ? "✓" : ""}
-                            </button>
+                    <div className="space-y-6">
+                      {Object.entries(tasksByTime).map(([timeOfDay, tasks]) => {
+                        if (tasks.length === 0) return null;
+                        
+                        return (
+                          <div key={timeOfDay}>
+                            {/* Time Section Header */}
+                            <div className="flex items-center mb-3">
+                              <span className="text-2xl mr-2">{timeIcons[timeOfDay]}</span>
+                              <h3 className="text-lg font-semibold text-gray-800">{timeOfDay}</h3>
+                              <div className="flex-1 h-px bg-gray-200 ml-3"></div>
+                              <span className="text-sm text-gray-500 ml-3">
+                                {tasks.filter(t => isTaskCompleted(t.id, selectedDate)).length}/{tasks.length}
+                              </span>
+                            </div>
+                            
+                            {/* Tasks in this time period */}
+                            <div className="space-y-3">
+                              {tasks.map(task => (
+                                <div key={task.id} className={`rounded-2xl shadow-sm border p-4 ${
+                                  isTaskCompleted(task.id, selectedDate) 
+                                    ? "bg-green-100 border-green-300" 
+                                    : "bg-white border-gray-100"
+                                }`}>
+                                  <div className="flex items-center">
+                                    <button
+                                      onClick={() => toggleTask(task)}
+                                      disabled={isNotToday(selectedDate)}
+                                      className={`w-8 h-8 rounded-full mr-4 flex items-center justify-center ${
+                                        isTaskCompleted(task.id, selectedDate)
+                                          ? "bg-green-500 text-white"
+                                          : "bg-gray-200 text-gray-400"
+                                      } ${isNotToday(selectedDate) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                                    >
+                                      {isTaskCompleted(task.id, selectedDate) ? "✓" : ""}
+                                    </button>
 
-                            <div className="flex items-center flex-1">
-                              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-                                <span className="text-lg">{getTaskEmoji(task.name, task.emoji)}</span>
-                              </div>
-                              <div className="flex-1">
-                                <div className={`font-medium text-gray-800 ${isTaskCompleted(task.id, selectedDate) ? "line-through" : ""}`}>
-                                  {task.name}
+                                    <div className="flex items-center flex-1">
+                                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
+                                        <span className="text-lg">{getTaskEmoji(task.name, task.emoji)}</span>
+                                      </div>
+                                      <div className="flex-1">
+                                        <div className={`font-medium text-gray-800 ${isTaskCompleted(task.id, selectedDate) ? "line-through" : ""}`}>
+                                          {task.name}
+                                        </div>
+                                        <div className="text-xs mt-1 flex items-center gap-2">
+                                          {(!selectedProfile || selectedProfile === "Family") && (
+                                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPersonColor(task.assignee)}`}>
+                                              {task.assignee}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center bg-gradient-to-r from-yellow-100 to-orange-100 rounded-full px-3 py-1 shadow-sm border border-yellow-200">
+                                        <span className="text-lg mr-1 filter drop-shadow-sm">⭐</span>
+                                        <span className="font-bold text-orange-800 text-sm">{task.points}</span>
+                                      </div>
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="text-xs mt-1 flex items-center gap-2">
-                                  {(!selectedProfile || selectedProfile === "Family") && (
-                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPersonColor(task.assignee)}`}>
-                                      {task.assignee}
-                                    </span>
-                                  )}
-
-                                  <span className="text-gray-500">
-                                    {task.frequency === "Once" 
-                                      ? "Once" 
-                                      : task.daysOfWeek && task.daysOfWeek.length === 7 
-                                        ? "Daily" 
-                                        : task.daysOfWeek 
-                                          ? task.daysOfWeek.map(d => d.slice(0, 3)).join(", ")
-                                          : task.frequency === "Daily" 
-                                            ? "Daily" 
-                                            : "Specific"
-                                    }
-                                    {task.timeOfDay && task.timeOfDay !== "Anytime" && (
-                                      <span className="ml-1">• {task.timeOfDay}</span>
-                                    )}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="flex items-center bg-gradient-to-r from-yellow-100 to-orange-100 rounded-full px-3 py-1 shadow-sm border border-yellow-200">
-                                <span className="text-lg mr-1 filter drop-shadow-sm">⭐</span>
-                                <span className="font-bold text-orange-800 text-sm">{task.points}</span>
-                              </div>
+                              ))}
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   );
                 })()}
@@ -2900,7 +2920,7 @@
                     <input
                       type="text"
                       placeholder="Badge Name"
-                      value={newCustomBadge.name}
+                      value={newCustomBadge.name || ''}
                       onChange={(e) => setNewCustomBadge({ ...newCustomBadge, name: e.target.value })}
                       className="w-full border border-gray-200 p-2 rounded-lg focus:border-yellow-400 text-sm"
                       required
@@ -2908,7 +2928,7 @@
                     <input
                       type="text"
                       placeholder="Description"
-                      value={newCustomBadge.description}
+                      value={newCustomBadge.description || ''}
                       onChange={(e) => setNewCustomBadge({ ...newCustomBadge, description: e.target.value })}
                       className="w-full border border-gray-200 p-2 rounded-lg focus:border-yellow-400 text-sm"
                       required
@@ -2918,7 +2938,7 @@
                         type="number"
                         placeholder="0"
                         min="0"
-                        value={newCustomBadge.points === 0 ? '' : (newCustomBadge.points || '')}
+                        value={newCustomBadge.points || ''}
                         onChange={(e) => setNewCustomBadge({ ...newCustomBadge, points: e.target.value === '' ? 0 : Number(e.target.value) })}
                         className="w-full border border-gray-200 p-2 rounded-lg focus:border-yellow-400 text-sm"
                       />
@@ -2961,23 +2981,24 @@
                           <div className="grid grid-cols-1 gap-2">
                             <input
                               type="text"
-                              value={badgeInfo.emoji}
+                              value={badgeInfo.emoji || ''}
                               onChange={(e) => updateBadge(badgeName, { ...badgeInfo, emoji: e.target.value })}
                               className="w-full border p-2 rounded text-lg text-center"
                               maxLength="4"
                             />
                             <input
                               type="text"
-                              value={badgeInfo.description}
+                              value={badgeInfo.description || ''}
                               onChange={(e) => updateBadge(badgeName, { ...badgeInfo, description: e.target.value })}
                               className="w-full border p-2 rounded text-sm"
                             />
                             <input
                               type="number"
                               min="0"
-                              value={badgeInfo.points === 0 ? '' : (badgeInfo.points || '')}
+                              value={badgeInfo.points || ''}
                               onChange={(e) => updateBadge(badgeName, { ...badgeInfo, points: e.target.value === '' ? 0 : Number(e.target.value) })}
                               className="w-full border p-2 rounded text-sm"
+                              placeholder="0"
                             />
                           </div>
                           <div className="flex gap-2">
@@ -3094,6 +3115,7 @@
                                     u.name === selectedProfile ? { ...u, name: e.target.value } : u
                                   );
                                   setUsers(updatedUsers);
+                                  setSelectedProfile(e.target.value);
                                 }}
                                 className="w-full sm:w-48 border border-gray-200 p-2 rounded-lg text-center"
                               />
@@ -3448,7 +3470,7 @@
               </div>
 
               {/* Add New Task Section */}
-              <div className="bg-orange-50 rounded-lg p-4 sm:p-6 border border-orange-200 mb-6">
+              <div className="bg-blue-50 rounded-lg p-4 sm:p-6 border border-blue-200 mb-6">
                 <div className="mb-4">
                   <h3 className="text-lg font-semibold text-gray-800 flex items-center mb-3">
                     <span className="mr-2">➕</span>
@@ -3504,7 +3526,7 @@
                         <input
                           type="text"
                           placeholder="Task Name"
-                          value={newTask.name}
+                          value={newTask.name || ''}
                           onChange={(e) => setNewTask({ ...newTask, name: e.target.value })}
                           className="w-full bg-white border border-gray-300 rounded-lg px-4 py-3 text-gray-800 placeholder-gray-500 focus:border-orange-500 focus:outline-none"
                           required
@@ -3713,7 +3735,7 @@
               </div>
 
               {/* Existing Tasks List */}
-              <div className="bg-gray-50 rounded-lg p-4 sm:p-6 border border-gray-200">
+              <div className="bg-blue-50 rounded-lg p-4 sm:p-6 border border-blue-200">
                 <div className="mb-4">
                   <h3 className="text-lg font-semibold text-gray-800 flex items-center mb-3">
                     <span className="mr-2">📋</span>
@@ -3746,14 +3768,14 @@
                           <div className="space-y-4">
                             <input
                               type="text"
-                              value={editedTaskData.name || task.name}
+                              value={editedTaskData.name !== undefined ? editedTaskData.name : task.name || ''}
                               onChange={(e) => setEditedTaskData({ ...editedTaskData, name: e.target.value })}
                               className="w-full bg-white border border-gray-300 rounded-lg px-3 sm:px-4 py-3 text-gray-800 focus:border-orange-500 focus:outline-none text-sm sm:text-base"
                               placeholder="Task Name"
                             />
 
                             <textarea
-                              value={editedTaskData.notes || task.notes || ''}
+                              value={editedTaskData.notes !== undefined ? editedTaskData.notes : task.notes || ''}
                               onChange={(e) => setEditedTaskData({ ...editedTaskData, notes: e.target.value })}
                               className="w-full bg-white border border-gray-300 rounded-lg px-3 sm:px-4 py-3 text-gray-800 focus:border-orange-500 focus:outline-none h-20 resize-none text-sm sm:text-base"
                               placeholder="Notes"
