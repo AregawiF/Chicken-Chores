@@ -147,7 +147,19 @@
       "Smileys & People": [
         "😊", "😃", "😄", "😁", "🙂", "😉", "😍", "🤗", "😎", "🤔", "😴", "😋", "😜", "🤩", "🥳",
         "👍", "👏", "💪", "🙌", "👋", "✋", "👌", "✌️", "🤞", "🤟", "🤝", "👊", "✊", "🙏",
-        "👨‍👩‍👧‍👦", "👪", "👶", "👧", "👦", "👩", "👨", "🧑", "👴", "👵", "🙋‍♀️", "🙋‍♂️", "💁‍♀️", "💁‍♂️"
+        "👨‍👩‍👧‍👦", "👪", "👶", "👧", "👦", "👩", "👨", "🧑", "👴", "👵", "🙋‍♀️", "🙋‍♂️", "💁‍♀️", "💁‍♂️",
+        "👩‍🦰", "👩‍🦱", "👩‍🦳", "👩‍🦲", "👨‍🦰", "👨‍🦱", "👨‍🦳", "👨‍🦲", "🧑‍🦰", "🧑‍🦱", "🧑‍🦳", "🧑‍🦲",
+        "👱‍♀️", "👱‍♂️", "🧔", "🧔‍♀️", "🧔‍♂️", "👸", "🤴", "👰", "🤵", "👰‍♀️", "👰‍♂️", "🤵‍♀️", "🤵‍♂️",
+        "🤱", "🤰", "👼", "🎅", "🤶", "🧙‍♀️", "🧙‍♂️", "🧚‍♀️", "🧚‍♂️", "🧛‍♀️", "🧛‍♂️", "🧜‍♀️", "🧜‍♂️",
+        "🧝‍♀️", "🧝‍♂️", "🧞‍♀️", "🧞‍♂️", "🧟‍♀️", "🧟‍♂️", "💆‍♀️", "💆‍♂️", "💇‍♀️", "💇‍♂️", "🚶‍♀️", "🚶‍♂️",
+        "🏃‍♀️", "🏃‍♂️", "💃", "🕺", "🕴️", "👯‍♀️", "👯‍♂️", "🧘‍♀️", "🧘‍♂️", "🧗‍♀️", "🧗‍♂️", "🏇",
+        "⛷️", "🏂", "🏌️‍♀️", "🏌️‍♂️", "🏄‍♀️", "🏄‍♂️", "🚣‍♀️", "🚣‍♂️", "🏊‍♀️", "🏊‍♂️", "⛹️‍♀️", "⛹️‍♂️",
+        "🏋️‍♀️", "🏋️‍♂️", "🚴‍♀️", "🚴‍♂️", "🚵‍♀️", "🚵‍♂️", "🤸‍♀️", "🤸‍♂️", "🤼‍♀️", "🤼‍♂️", "🤽‍♀️", "🤽‍♂️",
+        "🤾‍♀️", "🤾‍♂️", "🤹‍♀️", "🤹‍♂️", "🧑‍🍳", "👨‍🍳", "👩‍🍳", "🧑‍🎓", "👨‍🎓", "👩‍🎓", "🧑‍🎤", "👨‍🎤", "👩‍🎤",
+        "🧑‍🏫", "👨‍🏫", "👩‍🏫", "🧑‍🏭", "👨‍🏭", "👩‍🏭", "🧑‍💻", "👨‍💻", "👩‍💻", "🧑‍💼", "👨‍💼", "👩‍💼",
+        "🧑‍🔧", "👨‍🔧", "👩‍🔧", "🧑‍🔬", "👨‍🔬", "👩‍🔬", "🧑‍🎨", "👨‍🎨", "👩‍🎨", "🧑‍🚒", "👨‍🚒", "👩‍🚒",
+        "🧑‍✈️", "👨‍✈️", "👩‍✈️", "🧑‍🚀", "👨‍🚀", "👩‍🚀", "🧑‍⚖️", "👨‍⚖️", "👩‍⚖️", "🧑‍🌾", "👨‍🌾", "👩‍🌾",
+        "🧑‍⚕️", "👨‍⚕️", "👩‍⚕️", "🕵️‍♀️", "🕵️‍♂️", "💂‍♀️", "💂‍♂️", "👮‍♀️", "👮‍♂️", "👷‍♀️", "👷‍♂️"
       ],
       "Animals & Nature": [
         "🐔", "🐓", "🐣", "🐤", "🐥", "🐶", "🐕", "🐱", "🐈", "🐭", "🐹", "🐰", "🐇", "🦊", "🐺", "🐷", "🐽",
@@ -408,6 +420,23 @@
       const getCurrentDayName = () => selectedDate.toLocaleDateString('en-US', { weekday: 'long' });
 
       const deleteTask = (id) => setTasks(tasks.filter(task => task.id !== id));
+
+      const duplicateTask = (task) => {
+        const duplicatedTask = {
+          ...task,
+          id: Date.now(),
+          name: `${task.name} (Copy)`
+        };
+        
+        // Find the index of the original task
+        const originalIndex = tasks.findIndex(t => t.id === task.id);
+        
+        // Create new tasks array with the copy inserted right after the original
+        const newTasks = [...tasks];
+        newTasks.splice(originalIndex + 1, 0, duplicatedTask);
+        
+        setTasks(newTasks);
+      };
 
       const updateTask = (taskId, updatedTask) => {
         setTasks(tasks.map(task => task.id === taskId ? { ...task, ...updatedTask } : task));
@@ -1831,7 +1860,7 @@
 
                     <button
                       onClick={handleLogout}
-                      className="w-full bg-red-500 hover:bg-red-600 text-white p-3 rounded-lg font-medium transition-colors"
+                      className="w-full bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-lg font-medium transition-colors"
                     >
                       🚪 Log Out
                     </button>
@@ -1927,7 +1956,7 @@
                       alert("✅ Weekly leaderboard has been reset! All points and badges have been cleared.");
                     }
                   }}
-                  className="w-full bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg text-sm font-medium transition-colors"
+                  className="w-full bg-orange-400 hover:bg-orange-500 text-white p-2 rounded-lg text-sm font-medium transition-colors"
                 >
                   🔄 Reset Weekly Leaderboard
                 </button>
@@ -3481,7 +3510,7 @@
               </div>
 
               {/* Add New Task Section */}
-              <div className="bg-blue-50 rounded-lg p-4 sm:p-6 border border-blue-200 mb-6">
+              <div className="bg-orange-50 rounded-lg p-4 sm:p-6 border border-orange-200 mb-6">
                 <div className="mb-4">
                   <h3 className="text-lg font-semibold text-gray-800 flex items-center mb-3">
                     <span className="mr-2">➕</span>
@@ -3555,11 +3584,12 @@
 
                       {/* Notes */}
                       <div>
-                        <textarea
+                        <input
+                          type="text"
                           placeholder="Notes"
                           value={newTask.notes || ''}
                           onChange={(e) => setNewTask({ ...newTask, notes: e.target.value })}
-                          className="w-full bg-white border border-gray-300 rounded-lg px-4 py-3 text-gray-800 placeholder-gray-500 focus:border-orange-500 focus:outline-none h-20 resize-none"
+                          className="w-full bg-white border border-gray-300 rounded-lg px-4 py-3 text-gray-800 placeholder-gray-500 focus:border-orange-500 focus:outline-none"
                         />
                       </div>
 
@@ -3577,7 +3607,7 @@
                             </span>
                           </div>
                           <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7 7" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
                         </button>
                       </div>
@@ -3734,7 +3764,7 @@
                           className={`w-full px-4 py-3 rounded-lg font-medium text-base ${
                             !newTask.name || newTask.daysOfWeek.length === 0 
                               ? "bg-gray-300 text-gray-500 cursor-not-allowed" 
-                              : "bg-orange-500 text-white hover:bg-orange-600"
+                              : "bg-blue-600 text-white hover:bg-blue-700 shadow-lg transform hover:scale-105 transition-all duration-200"
                           }`}
                         >
                           Add Task
@@ -3750,7 +3780,7 @@
                 <div className="mb-4">
                   <h3 className="text-lg font-semibold text-gray-800 flex items-center mb-3">
                     <span className="mr-2">📋</span>
-                    Edit Tasks
+                    All Tasks
                   </h3>
                   <div className="flex flex-wrap gap-2">
                     <span className="text-xs sm:text-sm text-gray-500 bg-white px-2 sm:px-3 py-1 rounded-full border">
@@ -4037,6 +4067,12 @@
                                   className="bg-blue-500 text-white px-3 py-2 rounded-lg text-xs sm:text-sm min-h-[40px] flex items-center justify-center"
                                 >
                                   Edit
+                                </button>
+                                <button
+                                  onClick={() => duplicateTask(task)}
+                                  className="bg-green-500 text-white px-3 py-2 rounded-lg text-xs sm:text-sm min-h-[40px] flex items-center justify-center"
+                                >
+                                  Duplicate
                                 </button>
                                 <button
                                   onClick={() => deleteTask(task.id)}
