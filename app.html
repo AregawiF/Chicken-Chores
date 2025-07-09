@@ -27,6 +27,14 @@
       signOut,
       onAuthStateChanged 
     } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js"; 
+    // Import Firestore functions
+    import { 
+      getFirestore,
+      doc,
+      getDoc,
+      setDoc,
+      onSnapshot
+    } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore.js";
 
     // Your web app's Firebase configuration
     const firebaseConfig = {
@@ -45,7 +53,10 @@
     const auth = getAuth(app); 
     const googleProvider = new GoogleAuthProvider();
 
-    // *** FIX: Attach Firebase services to the global window object ***
+    // Initialize Firestore
+    const db = getFirestore(app);
+
+    // Attach Firebase Auth services to the global window object
     window.firebaseAuth = {
       auth,
       googleProvider,
@@ -55,6 +66,15 @@
       signOut,
       onAuthStateChanged
     };
+    
+    // Attach Firebase Firestore services to the global window object
+    window.firebaseDb = {
+        db,
+        doc,
+        getDoc,
+        setDoc,
+        onSnapshot
+    };
 
   </script>
 </head>
@@ -63,7 +83,7 @@
   <div id="root" class="container mx-auto p-2 sm:p-4"></div>
 
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
 
     // App pages/routes
     const PAGES = {
@@ -127,6 +147,15 @@
       { name: "Kid 1", points: 0, badges: [], avatar: "🧑", color: "orange" },
       { name: "Kid 2", points: 0, badges: [], avatar: "👦", color: "pink" },
     ];
+    
+    const getInitialState = () => ({
+        tasks: JSON.parse(localStorage.getItem("tasks")) || initialTasks,
+        users: JSON.parse(localStorage.getItem("users")) || initialUsers,
+        customBadges: JSON.parse(localStorage.getItem("customBadges")) || {},
+        taskCompletions: JSON.parse(localStorage.getItem("taskCompletions")) || {},
+        lastWeeklyReset: localStorage.getItem("lastWeeklyReset") || null,
+        lastResetDate: localStorage.getItem("lastResetDate") || new Date().toDateString(),
+    });
 
     const presetTasks = [
         { name: "Feed Chickens", points: 10, frequency: "Daily", notes: "Fill feeders with chicken feed", emoji: "🌾", active: true, assignee: "Kid 1" },
@@ -216,8 +245,15 @@
 
     // Main App Component
     const App = () => {
-      const [tasks, setTasks] = useState(() => JSON.parse(localStorage.getItem("tasks")) || initialTasks);
-      const [users, setUsers] = useState(() => JSON.parse(localStorage.getItem("users")) || initialUsers);
+      // Default to localStorage, Firestore will override for logged-in users
+      const [tasks, setTasks] = useState(getInitialState().tasks);
+      const [users, setUsers] = useState(getInitialState().users);
+      const [customBadges, setCustomBadges] = useState(getInitialState().customBadges);
+      const [taskCompletions, setTaskCompletions] = useState(getInitialState().taskCompletions);
+      const [lastWeeklyReset, setLastWeeklyReset] = useState(getInitialState().lastWeeklyReset);
+      const [lastResetDate, setLastResetDate] = useState(getInitialState().lastResetDate);
+
+      // UI/Form-related state ---
       const [newTask, setNewTask] = useState({ name: "", frequency: "Daily", assignee: "Mom", points: 0, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "", startDate: new Date().toISOString().split('T')[0], emoji: "", active: true, timeOfDay: "Anytime" });
       const [showPresets, setShowPresets] = useState(false);
 
@@ -228,37 +264,186 @@
       });
       const [onboardingStep, setOnboardingStep] = useState(0);
 
-      // Authentication state
-      const [isAuthenticated, setIsAuthenticated] = useState(false); // Let onAuthStateChanged handle the initial state
-      // const [authMode, setAuthMode] = useState('signup'); // 'signup' or 'login'
-      // const [authForm, setAuthForm] = useState({
-      //   email: '',
-      //   password: '',
-      //   confirmPassword: '',
-      //   familyName: ''
-      // });
-      const [showPageTransition, setShowPageTransition] = useState(false);
+      // Auth and Data Loading State
+      const [currentUser, setCurrentUser] = useState(null);
+      const [isLoading, setIsLoading] = useState(true);
+      const [isSaving, setIsSaving] = useState(false);
+      const dataSyncTimer = useRef(null);
+      const isInitialLoad = useRef(true); // Prevents initial state from overwriting Firestore
 
-      // Legacy view state for backward compatibility
+      const [showPageTransition, setShowPageTransition] = useState(false);
       const [view, setView] = useState("tasks");
       const [selectedDate, setSelectedDate] = useState(new Date());
-      const [customBadges, setCustomBadges] = useState(() => JSON.parse(localStorage.getItem("customBadges")) || {});
       const [editingBadge, setEditingBadge] = useState(null);
       const [newCustomBadge, setNewCustomBadge] = useState({ name: "", emoji: "🏅", description: "", points: 0 });
       const [editingTask, setEditingTask] = useState(null);
       const [editedTaskData, setEditedTaskData] = useState({});
-      const [lastResetDate, setLastResetDate] = useState(() => localStorage.getItem("lastResetDate") || new Date().toDateString());
-      const [taskCompletions, setTaskCompletions] = useState(() => JSON.parse(localStorage.getItem("taskCompletions")) || {});
-      const [lastWeeklyReset, setLastWeeklyReset] = useState(() => localStorage.getItem("lastWeeklyReset") || null);
       const [badgeNotifications, setBadgeNotifications] = useState({});
       const [showMenu, setShowMenu] = useState(false);
       const [selectedProfile, setSelectedProfile] = useState(null);
       const [editingProfile, setEditingProfile] = useState(null);
-
-      // Emoji picker states
       const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-      const [emojiPickerTarget, setEmojiPickerTarget] = useState(null); // 'newTask', 'editTask', 'newBadge'
+      const [emojiPickerTarget, setEmojiPickerTarget] = useState(null);
       const [selectedEmojiCategory, setSelectedEmojiCategory] = useState("Smileys & People");
+      
+      // Add this state for the add member avatar picker
+      // const [newMemberEmojiCategory, setNewMemberEmojiCategory] = useState("Smileys & People");
+
+      // Initialize a new user's data in Firestore 
+      const initializeFirestoreData = async (user, familyName) => {
+        if (!user || !user.uid) return;
+        const { db, doc, setDoc } = window.firebaseDb;
+        const userDocRef = doc(db, 'families', user.uid);
+        
+        console.log(`Initializing Firestore for new user: ${user.uid}`);
+        
+        const initialData = {
+          familyName: familyName,
+          createdAt: new Date().toISOString(),
+          tasks: initialTasks,
+          users: initialUsers,
+          customBadges: {},
+          taskCompletions: {},
+          lastWeeklyReset: null,
+          lastResetDate: new Date().toDateString(),
+        };
+
+        try {
+          await setDoc(userDocRef, initialData);
+          console.log("Firestore initialized successfully.");
+          // Also save the local userAccount info for display purposes
+          localStorage.setItem("userAccount", JSON.stringify({
+            uid: user.uid,
+            email: user.email,
+            familyName: familyName,
+            createdAt: initialData.createdAt
+          }));
+        } catch (error) {
+          console.error("Error initializing Firestore data:", error);
+          alert("Could not initialize your account data. Please try again.");
+        }
+      };
+      
+      // Check authentication state on app load and set up data listener
+      useEffect(() => {
+        if (!window.firebaseAuth || !window.firebaseDb) return;
+        const { auth, onAuthStateChanged } = window.firebaseAuth;
+        const { db, doc, onSnapshot } = window.firebaseDb;
+
+        const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+            let firestoreListener = () => {}; // No-op function for unsubscribing
+            
+            if (user) {
+                // --- USER IS LOGGED IN ---
+                console.log("User is logged in:", user.uid);
+                setCurrentUser(user);
+
+                const userDocRef = doc(db, 'families', user.uid);
+
+                firestoreListener = onSnapshot(userDocRef, (docSnap) => {
+                    setIsLoading(true);
+                    if (docSnap.exists()) {
+                        console.log("Firestore data received.");
+                        const data = docSnap.data();
+                        
+                        // Load data from Firestore
+                        setTasks(data.tasks || initialTasks);
+                        setUsers(data.users || initialUsers);
+                        setCustomBadges(data.customBadges || {});
+                        setTaskCompletions(data.taskCompletions || {});
+                        setLastWeeklyReset(data.lastWeeklyReset || null);
+                        setLastResetDate(data.lastResetDate || new Date().toDateString());
+                        
+                        // Set flag to allow saving updates
+                        isInitialLoad.current = false;
+                    } else {
+                        // Document doesn't exist - this case is handled by signup
+                        console.log("No Firestore document for this user. Will be created on signup.");
+                        isInitialLoad.current = false;
+                    }
+                    setIsLoading(false);
+                }, (error) => {
+                    console.error("Firestore snapshot error:", error);
+                    alert("Error loading your data. Please refresh.");
+                    setIsLoading(false);
+                });
+            } else {
+                // --- USER IS A GUEST ---
+                console.log("User is a guest.");
+                setCurrentUser(null);
+                
+                // Load from localStorage
+                const localData = getInitialState();
+                setTasks(localData.tasks);
+                setUsers(localData.users);
+                setCustomBadges(localData.customBadges);
+                setTaskCompletions(localData.taskCompletions);
+                setLastWeeklyReset(localData.lastWeeklyReset);
+                setLastResetDate(localData.lastResetDate);
+
+                isInitialLoad.current = false;
+                setIsLoading(false);
+            }
+            
+            // Cleanup the previous listener when auth state changes
+            return () => {
+                console.log("Cleaning up Firestore listener.");
+                firestoreListener();
+            };
+        });
+
+        // Cleanup both listeners when the component unmounts
+        return () => unsubscribeAuth();
+      }, []);
+
+      // Effect to save data to Firestore (for logged-in users) or localStorage (for guests)
+      useEffect(() => {
+        // Don't save on the very first render before data is loaded
+        if (isInitialLoad.current) return;
+        
+        // Clear any existing timer
+        if (dataSyncTimer.current) {
+            clearTimeout(dataSyncTimer.current);
+        }
+
+        if (currentUser) {
+            // --- LOGGED-IN USER: Save to Firestore after a delay ---
+            setIsSaving(true);
+            dataSyncTimer.current = setTimeout(async () => {
+                const { db, doc, setDoc } = window.firebaseDb;
+                const userDocRef = doc(db, 'families', currentUser.uid);
+
+                const dataToSave = {
+                    tasks,
+                    users,
+                    customBadges,
+                    taskCompletions,
+                    lastWeeklyReset,
+                    lastResetDate
+                };
+
+                try {
+                    // Using { merge: true } is a good practice, though we are saving the whole object.
+                    await setDoc(userDocRef, dataToSave, { merge: true });
+                    console.log("✅ Data saved to Firestore.");
+                } catch (error) {
+                    console.error("Error saving data to Firestore:", error);
+                } finally {
+                    setIsSaving(false);
+                }
+            }, 1500); // Debounce for 1.5 seconds
+        } else {
+            // --- GUEST USER: Save to localStorage immediately ---
+            localStorage.setItem("tasks", JSON.stringify(tasks));
+            localStorage.setItem("users", JSON.stringify(users));
+            localStorage.setItem("customBadges", JSON.stringify(customBadges));
+            localStorage.setItem("taskCompletions", JSON.stringify(taskCompletions));
+            localStorage.setItem("lastWeeklyReset", lastWeeklyReset);
+            localStorage.setItem("lastResetDate", lastResetDate);
+        }
+        
+      }, [tasks, users, customBadges, taskCompletions, lastWeeklyReset, lastResetDate, currentUser]);
+
 
       const getDateKey = (date) => date.toDateString();
 
@@ -294,11 +479,10 @@
         const checkMidnightReset = () => {
           const now = new Date();
           const today = now.toDateString();
-          const storedLastReset = localStorage.getItem("lastResetDate");
 
-          if (storedLastReset && storedLastReset !== today) {
+          if (lastResetDate && lastResetDate !== today) {
             // For guest users, reset everything at midnight
-            if (!isAuthenticated) {
+            if (!currentUser) {
               // Clear all guest data
               localStorage.removeItem("tasks");
               localStorage.removeItem("users");
@@ -321,7 +505,6 @@
             }
             
             setLastResetDate(today);
-            localStorage.setItem("lastResetDate", today);
           }
         };
 
@@ -338,7 +521,7 @@
         }, msUntilMidnight);
 
         return () => clearTimeout(midnightTimeout);
-      }, [tasks, isAuthenticated]);
+      }, [lastResetDate, currentUser]);
 
       const getWeekStart = (date) => {
         const day = date.getDay();
@@ -350,33 +533,25 @@
         const checkWeeklyReset = () => {
           const now = new Date();
           const currentWeekStart = getWeekStart(now);
-          const storedLastWeeklyReset = localStorage.getItem("lastWeeklyReset");
 
-          if (!storedLastWeeklyReset || storedLastWeeklyReset !== currentWeekStart) {
+          if (!lastWeeklyReset || lastWeeklyReset !== currentWeekStart) {
             const resetUsers = users.map(user => ({ ...user, points: 0, badges: [] }));
             setUsers(resetUsers);
             setLastWeeklyReset(currentWeekStart);
-            localStorage.setItem("lastWeeklyReset", currentWeekStart);
           }
         };
 
         checkWeeklyReset();
         const dailyInterval = setInterval(checkWeeklyReset, 24 * 60 * 60 * 1000);
         return () => clearInterval(dailyInterval);
-      }, [users]);
+      }, [users, lastWeeklyReset]);
 
-      useEffect(() => {
-        localStorage.setItem("tasks", JSON.stringify(tasks));
-        localStorage.setItem("users", JSON.stringify(users));
-        localStorage.setItem("customBadges", JSON.stringify(customBadges));
-        localStorage.setItem("taskCompletions", JSON.stringify(taskCompletions));
-      }, [tasks, users, customBadges, taskCompletions]);
 
       const addTask = (e) => {
         if (e) e.preventDefault();
-        if (!newTask.name || newTask.daysOfWeek.length === 0) return;
+        if (!newTask.name || (newTask.frequency !== 'Once' && newTask.daysOfWeek.length === 0)) return;
         setTasks([...tasks, { id: Date.now(), ...newTask }]);
-        setNewTask({ name: "", frequency: "Daily", assignee: "Mom", points: 0, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "", startDate: new Date().toISOString().split('T')[0], emoji: "", active: true, timeOfDay: "Anytime" });
+        setNewTask({ name: "", frequency: "Daily", assignee: users[0]?.name || "Mom", points: 0, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "", startDate: new Date().toISOString().split('T')[0], emoji: "", active: true, timeOfDay: "Anytime" });
         setShowPresets(false);
         navigateToPage(PAGES.TASKS);
       };
@@ -410,8 +585,8 @@
             return taskStartDate.getTime() === currentDate.getTime();
           }
 
-          if (!task.daysOfWeek) {
-            return task.frequency === "Daily" || dayOfWeek === selectedDate.toLocaleDateString('en-US', { weekday: 'long' });
+          if (!task.daysOfWeek || task.daysOfWeek.length === 0) {
+            return false;
           }
           return task.daysOfWeek.includes(dayOfWeek);
         });
@@ -439,9 +614,37 @@
       };
 
       const updateTask = (taskId, updatedTask) => {
+        // Find the old task before update
+        const oldTask = tasks.find(task => task.id === taskId);
         setTasks(tasks.map(task => task.id === taskId ? { ...task, ...updatedTask } : task));
         setEditingTask(null);
         setEditedTaskData({});
+
+        // If points or assignee changed, update user points for completed dates
+        if ((updatedTask.points !== undefined && oldTask.points !== updatedTask.points) || (updatedTask.assignee && oldTask.assignee !== updatedTask.assignee)) {
+          setUsers(prevUsers => {
+            // For each user, recalculate points based on completions
+            return prevUsers.map(user => {
+              let points = user.points;
+              // For each date, if this task was completed, adjust points
+              Object.entries(taskCompletions).forEach(([dateKey, completions]) => {
+                if (completions[taskId]) {
+                  // If user was the old assignee, remove old points
+                  if (user.name === oldTask.assignee) {
+                    points -= oldTask.points;
+                  }
+                  // If user is the new assignee, add new points
+                  if (user.name === (updatedTask.assignee || oldTask.assignee)) {
+                    points += updatedTask.points !== undefined ? updatedTask.points : oldTask.points;
+                  }
+                }
+              });
+              // Prevent negative points
+              points = Math.max(0, points);
+              return { ...user, points };
+            });
+          });
+        }
       };
 
       const systemBadges = {
@@ -473,7 +676,22 @@
           }
         };
         setCustomBadges(updatedCustomBadges);
-        localStorage.setItem("customBadges", JSON.stringify(updatedCustomBadges));
+        
+        // Immediately check if any users already meet the requirements for this new badge
+        setUsers(prevUsers => {
+          return prevUsers.map(user => {
+            const userTasks = tasks.filter(t => t.assignee === user.name);
+            const updatedUser = { ...user };
+            
+            // Check if user meets the requirements for the new badge
+            if (newCustomBadge.points > 0 && user.points >= newCustomBadge.points && !user.badges.includes(newCustomBadge.name)) {
+              updatedUser.badges = [...user.badges, newCustomBadge.name];
+            }
+            
+            return updatedUser;
+          });
+        });
+        
         setNewCustomBadge({ name: "", emoji: "🏅", description: "", points: 0 });
       };
 
@@ -483,7 +701,31 @@
           [badgeName]: { ...updatedInfo, isCustom: badgeDefinitions[badgeName]?.isCustom }
         };
         setCustomBadges(updatedCustomBadges);
-        localStorage.setItem("customBadges", JSON.stringify(updatedCustomBadges));
+        
+        // Only check user badges when editing is complete, not on every keystroke
+        // This prevents the form from closing while typing
+      };
+      
+      const saveBadgeChanges = (badgeName, updatedInfo) => {
+        // Immediately check if any users meet the updated requirements for this badge
+        setUsers(prevUsers => {
+          return prevUsers.map(user => {
+            const updatedUser = { ...user };
+            const hasBadge = user.badges.includes(badgeName);
+            const meetsRequirements = updatedInfo.points > 0 && user.points >= updatedInfo.points;
+            
+            if (meetsRequirements && !hasBadge) {
+              // User meets requirements but doesn't have badge - award it
+              updatedUser.badges = [...user.badges, badgeName];
+            } else if (!meetsRequirements && hasBadge) {
+              // User no longer meets requirements but has badge - remove it
+              updatedUser.badges = user.badges.filter(badge => badge !== badgeName);
+            }
+            
+            return updatedUser;
+          });
+        });
+        
         setEditingBadge(null);
       };
 
@@ -494,12 +736,10 @@
             [badgeName]: { ...badgeDefinitions[badgeName], deleted: true }
           };
           setCustomBadges(updatedCustomBadges);
-          localStorage.setItem("customBadges", JSON.stringify(updatedCustomBadges));
         } else {
           const updatedCustomBadges = { ...customBadges };
           delete updatedCustomBadges[badgeName];
           setCustomBadges(updatedCustomBadges);
-          localStorage.setItem("customBadges", JSON.stringify(updatedCustomBadges));
         }
         setUsers(users.map(user => ({
           ...user,
@@ -544,62 +784,36 @@
         // Today's completed tasks using current completion state
         const todayCompletedTasks = userTasks.filter(t => isTaskCompletedInState(t.id, selectedDate, completions));
         const todayDailyTasks = todayCompletedTasks.filter(t => t.frequency === "Daily");
-
-        // Badge checks - only add if conditions are met
-        if (allCompletedTasks.length >= 1) {
-          newBadges.push("First Timer");
-        }
-
-        if (todayDailyTasks.length >= 5) {
-          newBadges.push("Daily Hero");
-        }
-
-        if (user.points >= 100) {
-          newBadges.push("Century Club");
-        }
-
-        const eggTasks = allCompletedTasks.filter(t => t.name.toLowerCase().includes("egg"));
-        if (eggTasks.length >= 5) {
-          newBadges.push("Egg Expert");
-        }
-
-        const feedTasks = allCompletedTasks.filter(t => t.name.toLowerCase().includes("feed"));
-        if (feedTasks.length >= 7) {
-          newBadges.push("Feed Master");
-        }
-
-        const cleanTasks = allCompletedTasks.filter(t => t.name.toLowerCase().includes("clean"));
-        if (cleanTasks.length >= 3) {
-          newBadges.push("Clean Machine");
-        }
-
-        // Streak Master: Complete all daily tasks for today
+        if (allCompletedTasks.length >= 1) newBadges.push("First Timer");
+        if (todayDailyTasks.length >= 5) newBadges.push("Daily Hero");
+        if (user.points >= 100) newBadges.push("Century Club");
+        if (allCompletedTasks.filter(t => t.name.toLowerCase().includes("egg")).length >= 5) newBadges.push("Egg Expert");
+        if (allCompletedTasks.filter(t => t.name.toLowerCase().includes("feed")).length >= 7) newBadges.push("Feed Master");
+        if (allCompletedTasks.filter(t => t.name.toLowerCase().includes("clean")).length >= 3) newBadges.push("Clean Machine");
+        
         const userDailyTasks = userTasks.filter(t => {
-          if (!t.daysOfWeek) return t.frequency === "Daily";
           const currentDay = selectedDate.toLocaleDateString('en-US', { weekday: 'long' });
-          return t.daysOfWeek.includes(currentDay);
+          return t.daysOfWeek && t.daysOfWeek.includes(currentDay);
         });
         const completedDailyTasks = userDailyTasks.filter(t => isTaskCompletedInState(t.id, selectedDate, completions));
-        if (userDailyTasks.length > 0 && completedDailyTasks.length === userDailyTasks.length) {
-          newBadges.push("Streak Master");
-        }
+        if (userDailyTasks.length > 0 && completedDailyTasks.length === userDailyTasks.length) newBadges.push("Streak Master");
 
-        // Team Player: All family members complete their tasks today
         const todayTasks = allTasks.filter(t => {
-          if (!t.daysOfWeek) return t.frequency === "Daily";
           const currentDay = selectedDate.toLocaleDateString('en-US', { weekday: 'long' });
-          return t.daysOfWeek.includes(currentDay);
+          return t.daysOfWeek && t.daysOfWeek.includes(currentDay);
         });
         const allTasksCompleted = todayTasks.length > 0 && todayTasks.every(t => isTaskCompletedInState(t.id, selectedDate, completions));
-        if (allTasksCompleted) {
-          newBadges.push("Team Player");
-        }
+        if (allTasksCompleted) newBadges.push("Team Player");
 
-        // Add any custom badges that the user still has
-        const customBadgesEarned = user.badges.filter(badge => badgeDefinitions[badge]?.isCustom);
-        newBadges = [...newBadges, ...customBadgesEarned];
+        // After system badge logic, before returning newBadges:
+        Object.entries(badgeDefinitions).forEach(([badgeName, badgeInfo]) => {
+          if (badgeInfo.isCustom && badgeInfo.points > 0) {
+            if (user.points >= badgeInfo.points) {
+              newBadges.push(badgeName);
+            }
+          }
+        });
 
-        // Remove duplicates
         return [...new Set(newBadges)];
       };
 
@@ -607,33 +821,6 @@
         const dateKey = getDateKey(date);
         const dateCompletions = taskCompletions[dateKey];
         return dateCompletions ? dateCompletions[taskId] || false : false;
-      };
-
-      const completeTask = (task) => {
-        const dateKey = getDateKey(selectedDate);
-        setTaskCompletions(prev => ({
-          ...prev,
-          [dateKey]: {
-            ...prev[dateKey],
-            [task.id]: true
-          }
-        }));
-
-        setUsers(prevUsers => {
-          return prevUsers.map(u => {
-            if (u.name === task.assignee) {
-              const newPoints = u.points + task.points;
-              const userTasks = tasks.filter(t => t.assignee === u.name);
-              const updatedUser = { ...u, points: newPoints };
-              const newBadges = checkBadges(updatedUser, userTasks, tasks, prevUsers);
-              return { ...updatedUser, badges: newBadges };
-            } else {
-              const userTasks = tasks.filter(t => t.assignee === u.name);
-              const newBadges = checkBadges(u, userTasks, tasks, prevUsers);
-              return { ...u, badges: newBadges };
-            }
-          });
-        });
       };
 
       const toggleTask = (task) => {
@@ -686,15 +873,7 @@
           case "red": return "bg-red-200 text-red-800";
           case "yellow": return "bg-yellow-200 text-yellow-800";
           case "indigo": return "bg-indigo-200 text-indigo-800";
-          default:
-            // Fallback to original logic for backward compatibility
-            switch (assignee) {
-              case "Mom": return "bg-blue-200 text-blue-800";
-              case "Dad": return "bg-purple-200 text-purple-800";
-              case "Kid 1": return "bg-orange-200 text-orange-800";
-              case "Kid 2": return "bg-pink-200 text-pink-800";
               default: return "bg-gray-200 text-gray-800";
-            }
         }
       };
 
@@ -711,15 +890,7 @@
           case "red": return "text-red-600";
           case "yellow": return "text-yellow-600";
           case "indigo": return "text-indigo-600";
-          default:
-            // Fallback to original logic for backward compatibility
-            switch (assignee) {
-              case "Mom": return "text-blue-600";
-              case "Dad": return "text-purple-600";
-              case "Kid 1": return "text-orange-600";
-              case "Kid 2": return "text-pink-600";
               default: return "text-gray-600";
-            }
         }
       };
 
@@ -744,32 +915,22 @@
             setView("badge-editor");
             setSelectedProfile(null);
           }
-
-          // Apply any additional state
-          Object.keys(additionalState).forEach(key => {
-            if (key !== 'profile') {
-              // Handle other state updates if needed
-            }
-          });
-
           setShowPageTransition(false);
         }, 150);
       };
 
-      // Complete onboarding
       const completeOnboarding = () => {
         localStorage.setItem("hasCompletedOnboarding", "true");
         navigateToPage(PAGES.TASKS);
       };
 
-      // Reset onboarding (for settings)
       const resetOnboarding = () => {
         localStorage.removeItem("hasCompletedOnboarding");
         setOnboardingStep(0);
         navigateToPage(PAGES.ONBOARDING);
       };
 
-      // *** AUTHENTICATION FUNCTIONS - CORRECTED ***
+      // *** AUTHENTICATION FUNCTIONS - UPDATED FOR FIRESTORE ***
       const handleSignup = async (e, authForm) => {
         e.preventDefault();
         if (authForm.password !== authForm.confirmPassword) {
@@ -787,27 +948,12 @@
             authForm.email,
             authForm.password
           );
-
           const user = userCredential.user;
 
-          const userAccount = {
-              uid: user.uid,
-              email: user.email,
-              familyName: authForm.familyName,
-              createdAt: new Date().toISOString()
-          };
-          localStorage.setItem("userAccount", JSON.stringify(userAccount));
-
-          if (authForm.familyName && authForm.familyName !== "Family") {
-            const updatedUsers = users.map(user => ({
-              ...user,
-              familyName: authForm.familyName
-            }));
-            setUsers(updatedUsers);
-          }
+          // Initialize Firestore document for the new user
+          await initializeFirestoreData(user, authForm.familyName);
 
           navigateToPage(PAGES.TASKS);
-
         } catch (error) {
           console.error("Signup error:", error);
           alert(error.message);
@@ -822,18 +968,40 @@
         }
 
         try {
-          await window.firebaseAuth.signInWithEmailAndPassword(
+          const result = await window.firebaseAuth.signInWithEmailAndPassword(
             window.firebaseAuth.auth,
             authForm.email,
             authForm.password
           );
 
-          navigateToPage(PAGES.TASKS);
+          const user = result.user;
+          console.log("Email login successful for:", user.email);
 
+          const { db, doc, getDoc } = window.firebaseDb;
+          const userDocRef = doc(db, 'families', user.uid);
+          const docSnap = await getDoc(userDocRef);
+
+          if (docSnap.exists()) {
+              console.log("Found user document in Firestore, setting userAccount.");
+              const data = docSnap.data();
+              // This is the crucial step that was missing
+              localStorage.setItem("userAccount", JSON.stringify({
+                  uid: user.uid,
+                  email: user.email,
+                  familyName: data.familyName,
+                  createdAt: data.createdAt
+              }));
+          } else {
+              // This is an unlikely edge case, but good to have
+              console.warn("User is authenticated but has no Firestore document!");
+          }
+          
+          // onAuthStateChanged will handle data loading
+          navigateToPage(PAGES.TASKS);
         } catch (error) {
           console.error("Login error:", error);
-          if (error.code === "auth/invalid-login-credentials") {
-            alert("Invalid email or password")
+          if (error.code === "auth/invalid-login-credentials" || error.code === "auth/user-not-found" || error.code === "auth/wrong-password") {
+            alert("Invalid email or password.");
           } else {
             alert(error.message);
           }
@@ -842,93 +1010,66 @@
 
       const handleGoogleLogin = async () => {
         try {
-          console.log("🔄 Starting Google login process...");
           const result = await window.firebaseAuth.signInWithPopup(
             window.firebaseAuth.auth,
             window.firebaseAuth.googleProvider
           );
-
           const user = result.user;
-          console.log("✅ Google login successful for:", user.email);
+            console.log("Google login successful for:", user.email);
 
-          // Check if this user's data already exists in localStorage.
-          const isReturningUser = localStorage.getItem("userAccount") && JSON.parse(localStorage.getItem("userAccount")).uid === user.uid;
+            // Check if Firestore document exists for this user
+            const { db, doc, getDoc } = window.firebaseDb;
+            const userDocRef = doc(db, 'families', user.uid);
+            const docSnap = await getDoc(userDocRef);
 
-          if (!isReturningUser) {
-            console.log("👤 New user detected. Prompting for family name.");
+            if (!docSnap.exists()) {
+                console.log("New Google user detected. Prompting for family name.");
             let familyName = "";
             while (!familyName || familyName.trim() === "") {
               familyName = prompt("Welcome! Please enter your Family Name to continue:");
-              if (familyName === null) { // User clicked "Cancel"
-                console.log("❌ User cancelled sign-up. Signing out.");
+                    if (familyName === null) {
+                        console.log("User cancelled sign-up. Signing out.");
                 await window.firebaseAuth.signOut(window.firebaseAuth.auth);
-                return; // Stop the function
-              }
-            }
-
-            const userAccount = {
+                        return;
+                    }
+                }
+                // Initialize Firestore for the new Google user
+                await initializeFirestoreData(user, familyName.trim());
+            } else {
+                console.log("Returning user logged in via Google.");
+                const data = docSnap.data();
+                localStorage.setItem("userAccount", JSON.stringify({
               uid: user.uid,
               email: user.email,
-              familyName: familyName.trim(),
-              createdAt: new Date().toISOString()
-            };
-            localStorage.setItem("userAccount", JSON.stringify(userAccount));
-
-            localStorage.removeItem("tasks");
-            localStorage.removeItem("users");
-            localStorage.removeItem("customBadges");
-            localStorage.removeItem("taskCompletions");
-
-            setTasks(initialTasks);
-            setUsers(initialUsers);
-
-            console.log("✅ New account configured for:", familyName);
-          } else {
-            console.log("✅ Returning user logged in.");
-          }
-
+                    familyName: data.familyName,
+                    createdAt: data.createdAt
+                }));
+            }
           navigateToPage(PAGES.TASKS);
-
         } catch (error) {
           if (error.code === 'auth/popup-closed-by-user') {
             console.log("Login popup closed by user.");
             return;
           }
-          console.error("❌ Google login error:", error);
+            console.error("Google login error:", error);
           alert(error.message);
         }
       };
 
       const handleLogout = async () => {
-        if (confirm("Are you sure you want to log out? This will clear your local data and you will need to log in again.")) {
+        if (confirm("Are you sure you want to log out?")) {
           try {
             await window.firebaseAuth.signOut(window.firebaseAuth.auth);
+            // onAuthStateChanged will fire and reset the state to guest mode
+            localStorage.removeItem("userAccount");
             navigateToPage(PAGES.LOGIN);
-
-            console.log("✅ Logged out successfully");
+            console.log("Logged out successfully");
           } catch (error) {
             console.error("Logout error:", error);
             alert(error.message);
           }
         }
       };
-
-      // Check authentication state on app load
-      useEffect(() => {
-        if (!window.firebaseAuth) return;
-        const unsubscribe = window.firebaseAuth.onAuthStateChanged(window.firebaseAuth.auth, (user) => {
-          if (user) {
-            // User is signed in
-            setIsAuthenticated(true);
-          } else {
-            // User is signed out or a guest
-            setIsAuthenticated(false);
-          }
-        });
-
-        // Cleanup the listener when the component unmounts
-        return () => unsubscribe();
-      }, []);
 
       const getTaskEmoji = (taskName, taskEmoji) => {
         if (taskEmoji) return taskEmoji;
@@ -1033,28 +1174,20 @@
             closeEmojiPicker();
           }
         };
-
         document.addEventListener('click', handleClickOutside);
         return () => document.removeEventListener('click', handleClickOutside);
       }, [showEmojiPicker]);
 
-      const resetDaily = () => {
-        const dateKey = getDateKey(selectedDate);
-        setTaskCompletions(prev => ({ ...prev, [dateKey]: {} }));
-        const today = new Date().toDateString();
-        setLastResetDate(today);
-        localStorage.setItem("lastResetDate", today);
-      };
-
       const completionRate = () => {
         const total = tasks.length;
+        if (!total) return 0;
         let completed = 0;
         for (let i = 0; i < tasks.length; i++) {
           if (isTaskCompleted(tasks[i].id, selectedDate)) {
             completed++;
           }
         }
-        return total ? Math.round((completed / total) * 100) : 0;
+        return Math.round((completed / total) * 100);
       };
 
       const getUserCompletionRates = () => {
@@ -1106,7 +1239,7 @@
       // Onboarding Component
       // Onboarding Page now manages its own form state
       const OnboardingPage = ({ handleSignup, handleLogin, handleGoogleLogin, navigateToPage }) => {
-        const [authMode, setAuthMode] = useState('signup'); // 'signup' or 'login'
+        const [authMode, setAuthMode] = useState('signup');
         const [authForm, setAuthForm] = useState({
           email: '',
           password: '',
@@ -1354,13 +1487,14 @@
         );
       };
 
-      // Family Members Page Component (copy of Settings)
+      // Family Members Page Component
       const FamilyMembersPage = () => {
         const [newMemberName, setNewMemberName] = useState("");
         const [newMemberAvatar, setNewMemberAvatar] = useState("👤");
         const [newMemberColor, setNewMemberColor] = useState("blue");
         const [showAddMember, setShowAddMember] = useState(false);
         const [editedProfileData, setEditedProfileData] = useState({});
+        const [newMemberEmojiCategory, setNewMemberEmojiCategory] = useState("Smileys & People");
 
         const availableAvatars = Object.values(emojiCategories).flat();
 
@@ -1407,11 +1541,9 @@
           }
 
           if (confirm(`Are you sure you want to remove ${memberName} from the family? This will also remove all their task assignments.`)) {
-            // Remove user
-            setUsers(users.filter(user => user.name !== memberName));
-
-            // Reassign their tasks to the first remaining user
             const remainingUsers = users.filter(user => user.name !== memberName);
+            setUsers(remainingUsers);
+            
             if (remainingUsers.length > 0) {
               const newAssignee = remainingUsers[0].name;
               setTasks(tasks.map(task => 
@@ -1641,13 +1773,14 @@
                           <div className="flex space-x-1 overflow-x-auto p-2 border-b border-gray-200">
                             {Object.keys(emojiCategories).map((category) => (
                               <button
+                                type="button"
                                 key={category}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setSelectedEmojiCategory(category);
+                                  setNewMemberEmojiCategory(category);
                                 }}
                                 className={`px-2 py-1 rounded-lg text-xs font-medium whitespace-nowrap ${
-                                  selectedEmojiCategory === category
+                                  newMemberEmojiCategory === category
                                     ? "bg-purple-500 text-white"
                                     : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                                 }`}
@@ -1658,7 +1791,7 @@
                           </div>
                           {/* Emoji Grid */}
                           <div className="grid grid-cols-8 gap-2 max-h-32 overflow-y-auto p-2">
-                            {emojiCategories[selectedEmojiCategory].map((avatar, index) => (
+                            {emojiCategories[newMemberEmojiCategory].map((avatar, index) => (
                               <button
                                 key={index}
                                 type="button"
@@ -1821,9 +1954,7 @@
                     </svg>
                   </div>
                 </div>
-
-                {isAuthenticated ? (
-                  /* Authenticated User Information */
+                {currentUser ? (
                   <div className="space-y-4">
                     <div className="bg-white p-4 rounded-lg border border-blue-300">
                       <h4 className="text-sm font-semibold text-blue-800 mb-3">Account Information</h4>
@@ -1866,7 +1997,6 @@
                     </button>
                   </div>
                 ) : (
-                  /* Non-Authenticated User */
                   <div className="space-y-4">
                     <div className="bg-white p-4 rounded-lg border border-orange-300">
                       <h4 className="text-sm font-semibold text-orange-800 mb-3">Guest Mode</h4>
@@ -1946,13 +2076,12 @@
                         badges: [] 
                       }));
                       setUsers(resetUsers);
-                      
+                      // Also clear all task completions
+                      setTaskCompletions({});
                       // Update the last weekly reset date
                       const now = new Date();
                       const currentWeekStart = getWeekStart(new Date(now));
                       setLastWeeklyReset(currentWeekStart);
-                      localStorage.setItem("lastWeeklyReset", currentWeekStart);
-                      
                       alert("✅ Weekly leaderboard has been reset! All points and badges have been cleared.");
                     }
                   }}
@@ -1962,7 +2091,7 @@
                 </button>
               </div>
 
-              {/* App Information Section */}
+              {/* *** SECTION RESTORED: App Information Section *** */}
               <div className="bg-green-50 p-4 rounded-lg border border-green-200">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1972,7 +2101,7 @@
                       <p><strong>Family Members:</strong> {users.length}</p>
                       <p><strong>Total Tasks:</strong> {tasks.length}</p>
                       <p><strong>Total Badges:</strong> {Object.keys(badgeDefinitions).length}</p>
-                      {isAuthenticated && (
+                      {currentUser && (
                         <p><strong>Account:</strong> Connected</p>
                       )}
                     </div>
@@ -1991,7 +2120,7 @@
 
       // Login Page Component
       const LoginPage = ({ handleSignup, handleLogin, handleGoogleLogin, navigateToPage }) => {
-        const [authMode, setAuthMode] = useState('login'); // Default to login here
+        const [authMode, setAuthMode] = useState('login');
         const [authForm, setAuthForm] = useState({
           email: '',
           password: '',
@@ -2375,14 +2504,7 @@
                     "Evening": filteredTasks.filter(t => t.timeOfDay === "Evening"),
                     "Anytime": filteredTasks.filter(t => !t.timeOfDay || t.timeOfDay === "Anytime")
                   };
-
-                  const timeIcons = {
-                    "Morning": "",
-                    "Afternoon": "", 
-                    "Evening": "",
-                    "Anytime": ""
-                  };
-
+                  const timeIcons = { "Morning": "", "Afternoon": "", "Evening": "", "Anytime": "" };
                   return (
                     <div className="space-y-6">
                       {Object.entries(tasksByTime).map(([timeOfDay, tasks]) => {
@@ -2459,6 +2581,8 @@
                 <div className="mt-6">
                   {(() => {
                     const user = users.find(u => u.name === selectedProfile);
+                    if (!user) return null;
+
                     const userIndex = users.findIndex(u => u.name === selectedProfile);
                     const avatarEmojis = ["👩", "👨", "🧑", "👦"];
                     const userTasks = tasks.filter(t => t.assignee === selectedProfile);
@@ -2466,27 +2590,20 @@
                     const completedTasks = todayTasks.filter(t => isTaskCompleted(t.id, selectedDate));
                     const completionRate = todayTasks.length ? Math.round((completedTasks.length / todayTasks.length) * 100) : 0;
 
-                    if (!user) return null;
-
-                    // Get user color based on theme
                     const userColor = user?.color;
                     let colorClass = "bg-gray-50 border-gray-200";
-                    if (userColor) {
-                      switch (userColor) {
-                        case "blue": colorClass = "bg-blue-50 border-blue-200"; break;
-                        case "purple": colorClass = "bg-purple-50 border-purple-200"; break;
-                        case "orange": colorClass = "bg-orange-50 border-orange-200"; break;
-                        case "pink": colorClass = "bg-pink-50 border-pink-200"; break;
-                        case "green": colorClass = "bg-green-50 border-green-200"; break;
-                        case "red": colorClass = "bg-red-50 border-red-200"; break;
-                        case "yellow": colorClass = "bg-yellow-50 border-yellow-200"; break;
-                        case "indigo": colorClass = "bg-indigo-50 border-indigo-200"; break;
-                        default: colorClass = "bg-gray-50 border-gray-200"; break;
-                      }
-                    } else {
-                      // Fallback to index-based colors for backward compatibility
-                      const colors = ["bg-blue-50 border-blue-200", "bg-purple-50 border-purple-200", "bg-orange-50 border-orange-200", "bg-pink-50 border-pink-200"];
-                      colorClass = colors[userIndex] || "bg-gray-50 border-gray-200";
+                    if(userColor) {
+                        const colorMap = {
+                            blue: "bg-blue-50 border-blue-200",
+                            purple: "bg-purple-50 border-purple-200",
+                            orange: "bg-orange-50 border-orange-200",
+                            pink: "bg-pink-50 border-pink-200",
+                            green: "bg-green-50 border-green-200",
+                            red: "bg-red-50 border-red-200",
+                            yellow: "bg-yellow-50 border-yellow-200",
+                            indigo: "bg-indigo-50 border-indigo-200",
+                        };
+                        colorClass = colorMap[userColor] || colorClass;
                     }
 
                     return (
@@ -2884,15 +3001,7 @@
                     startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
                     const endOfWeek = new Date(startOfWeek);
                     endOfWeek.setDate(startOfWeek.getDate() + 6);
-
-                    return `Week of ${startOfWeek.toLocaleDateString('en-US', { 
-                      month: 'short', 
-                      day: 'numeric' 
-                    })} - ${endOfWeek.toLocaleDateString('en-US', { 
-                      month: 'short', 
-                      day: 'numeric',
-                      year: 'numeric'
-                    })}`;
+                    return `Week of ${startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
                   })()}
                 </div>
               </div>
@@ -2978,7 +3087,7 @@
                         type="number"
                         placeholder="0"
                         min="0"
-                        value={newCustomBadge.points || ''}
+                        value={newCustomBadge.points || 0}
                         onChange={(e) => setNewCustomBadge({ ...newCustomBadge, points: e.target.value === '' ? 0 : Number(e.target.value) })}
                         className="w-full border border-gray-200 p-2 rounded-lg focus:border-yellow-400 text-sm"
                       />
@@ -3020,6 +3129,7 @@
                         <div className="p-3 space-y-2">
                           <div className="grid grid-cols-1 gap-2">
                             <input
+                              key={`${badgeName}-emoji`}
                               type="text"
                               value={badgeInfo.emoji || ''}
                               onChange={(e) => updateBadge(badgeName, { ...badgeInfo, emoji: e.target.value })}
@@ -3027,15 +3137,17 @@
                               maxLength="4"
                             />
                             <input
+                              key={`${badgeName}-description`}
                               type="text"
                               value={badgeInfo.description || ''}
                               onChange={(e) => updateBadge(badgeName, { ...badgeInfo, description: e.target.value })}
                               className="w-full border p-2 rounded text-sm"
                             />
                             <input
+                              key={`${badgeName}-points`}
                               type="number"
                               min="0"
-                              value={badgeInfo.points || ''}
+                              value={badgeInfo.points || 0}
                               onChange={(e) => updateBadge(badgeName, { ...badgeInfo, points: e.target.value === '' ? 0 : Number(e.target.value) })}
                               className="w-full border p-2 rounded text-sm"
                               placeholder="0"
@@ -3044,15 +3156,15 @@
                           <div className="flex gap-2">
                             <button
                               onClick={() => setEditingBadge(null)}
-                              className="w-full bg-green-500 text-white px-2 py-1 rounded text-xs sm:text-sm min-h-[40px]"
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={() => setEditingBadge(null)}
-                              className="w-full bg-gray-500 text-white px-2 py-1 rounded text-xs sm:text-sm min-h-[40px]"
+                              className="flex-1 bg-gray-500 text-white px-2 py-1 rounded text-xs"
                             >
                               Cancel
+                            </button>
+                            <button
+                              onClick={() => saveBadgeChanges(badgeName, badgeInfo)}
+                              className="flex-1 bg-green-500 text-white px-2 py-1 rounded text-xs"
+                            >
+                              Save
                             </button>
                           </div>
                         </div>
@@ -3065,7 +3177,6 @@
                             {badgeInfo.points > 0 && (
                               <div className="text-yellow-600 text-xs">{badgeInfo.points} ⭐</div>
                             )}
-
                           </div>
                           <div className="absolute top-1 right-1 flex gap-1">
                             <button
@@ -3180,14 +3291,14 @@
                         <div>
                           <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center">
-                              <div className="text-4xl mr-4">{avatarEmojis[userIndex]}</div>
+                              <div className="text-4xl mr-4">{user.avatar || avatarEmojis[userIndex]}</div>
                               <div>
                                 <h3 className="text-xl font-bold text-gray-800">{user.name}</h3>
                                 <p className="text-gray-600">{user.points} points this week</p>
                               </div>
                             </div>
                             <button
-                              onClick={() => setEditingProfile(true)}
+                              onClick={() => navigateToPage(PAGES.FAMILY_MEMBERS)}
                               className="bg-blue-500 text-white px-3 py-2 rounded-lg text-sm"
                             >
                               ✏️ Edit
@@ -3229,11 +3340,7 @@
                       {/* Today's Tasks */}
                       <div className="mb-6">
                         <h4 className="text-md font-semibold text-blue-700 mb-3">
-                          🌅 Today ({selectedDate.toLocaleDateString('en-US', { 
-                            weekday: 'short', 
-                            month: 'short', 
-                            day: 'numeric' 
-                          })})
+                          🌅 Today ({selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })})
                         </h4>
                         {todayTasks.length > 0 ? (
                           <div className="space-y-2">
@@ -3619,16 +3726,22 @@
                           <button
                             onClick={() => setNewTask({ ...newTask, points: Math.max(0, (newTask.points || 0) - 1) })}
                             className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center text-gray-800 text-xl"
+                            type="button"
                           >
                             −
                           </button>
-                          <div className="flex items-center bg-gray-100 rounded-lg px-6 py-3">
-                            <span className="text-2xl font-bold text-gray-800 mr-2">{newTask.points || 0}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={newTask.points || 0}
+                            onChange={e => setNewTask({ ...newTask, points: Math.max(0, Number(e.target.value)) })}
+                            className="w-24 text-center bg-gray-100 rounded-lg px-2 py-3 text-2xl font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-400"
+                          />
                             <span className="text-2xl">⭐</span>
-                          </div>
                           <button
                             onClick={() => setNewTask({ ...newTask, points: (newTask.points || 0) + 1 })}
                             className="w-12 h-12 bg-green-600 rounded-lg flex items-center justify-center text-white text-xl"
+                            type="button"
                           >
                             +
                           </button>
@@ -3760,9 +3873,9 @@
                       <div className="pt-4">
                         <button
                           onClick={addTask}
-                          disabled={!newTask.name || newTask.daysOfWeek.length === 0}
+                          disabled={!newTask.name || (newTask.frequency !== 'Once' && newTask.daysOfWeek.length === 0)}
                           className={`w-full px-4 py-3 rounded-lg font-medium text-base ${
-                            !newTask.name || newTask.daysOfWeek.length === 0 
+                            !newTask.name || (newTask.frequency !== 'Once' && newTask.daysOfWeek.length === 0)
                               ? "bg-gray-300 text-gray-500 cursor-not-allowed" 
                               : "bg-blue-600 text-white hover:bg-blue-700 shadow-lg transform hover:scale-105 transition-all duration-200"
                           }`}
@@ -3840,7 +3953,7 @@
                                   </span>
                                 </div>
                                 <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7 7" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                 </svg>
                               </button>
                             </div>
@@ -3855,21 +3968,25 @@
                                     points: Math.max(0, (editedTaskData.points !== undefined ? editedTaskData.points : task.points) - 1) 
                                   })}
                                   className="w-12 h-12 sm:w-14 sm:h-14 bg-gray-200 rounded-lg flex items-center justify-center text-gray-800 text-xl sm:text-2xl min-h-[48px]"
+                                  type="button"
                                 >
                                   −
                                 </button>
-                                <div className="flex items-center bg-gray-100 rounded-lg px-4 sm:px-6 py-3">
-                                  <span className="text-xl sm:text-2xl font-bold text-gray-800 mr-2">
-                                    {editedTaskData.points !== undefined ? editedTaskData.points : task.points}
-                                  </span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={editedTaskData.points !== undefined ? editedTaskData.points : task.points}
+                                  onChange={e => setEditedTaskData({ ...editedTaskData, points: Math.max(0, Number(e.target.value)) })}
+                                  className="w-24 text-center bg-gray-100 rounded-lg px-2 py-3 text-xl sm:text-2xl font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-400"
+                                />
                                   <span className="text-xl sm:text-2xl">⭐</span>
-                                </div>
                                 <button
                                   onClick={() => setEditedTaskData({ 
                                     ...editedTaskData, 
                                     points: (editedTaskData.points !== undefined ? editedTaskData.points : task.points) + 1 
                                   })}
                                   className="w-12 h-12 sm:w-14 sm:h-14 bg-green-600 rounded-lg flex items-center justify-center text-white text-xl sm:text-2xl min-h-[48px]"
+                                  type="button"
                                 >
                                   +
                                 </button>
