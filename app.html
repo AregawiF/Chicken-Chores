@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chicken Chores</title>
+  <title>Farm Fam</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- React and ReactDOM CDN -->
@@ -66,7 +66,7 @@
       signOut,
       onAuthStateChanged
     };
-    
+
     // Attach Firebase Firestore services to the global window object
     window.firebaseDb = {
         db,
@@ -78,7 +78,7 @@
 
   </script>
 </head>
-<body class="min-h-screen" style="background-color: #FAF6EF;">
+<body class="min-h-screen" style="background-color: #F0F8F0;">
 </body>
   <div id="root" class="container mx-auto p-2 sm:p-4"></div>
 
@@ -102,52 +102,53 @@
     const ONBOARDING_STEPS = [
       {
         id: 'welcome',
-        title: 'Welcome to Chicken Chores! 🐔',
-        content: 'Transform your family\'s chicken care routine into a fun, rewarding experience!',
+        title: 'Welcome to Farm Fam! 🐔',
+        content: 'Transform your family\'s farm chore routine into a fun, organized experience!',
         icon: '🏠'
       },
       {
         id: 'tasks',
         title: 'Assign Tasks 📋',
-        content: 'Get kids excited about caring for their chickens.',
+        content: 'Get kids excited about caring for their animals.',
         icon: '🐔'
       },
       {
         id: 'rewards',
         title: 'Earn Rewards ⭐',
-        content: 'Complete tasks to earn points, compete on the leaderboard, and unlock special badges like "Egg Expert" and "Feed Master".',
+        content: 'Complete tasks to earn points and unlock special badges like "Egg Expert" and "Feed Master".',
         icon: '🏆'
       },
       {
         id: 'auth',
         title: 'You\'re All Set! 🎉',
-        content: 'Create an account to save your progress, or skip to start using Chicken Chores right away!',
+        content: 'Create an account to save your progress, or skip to start using Farm Fam right away!',
         icon: '🚀'
       }
     ];
 
     // Initial data for tasks and users
     const initialTasks = [
-      { id: 1, name: "Feed Chickens", frequency: "Daily", assignee: "Kid 1", points: 10, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Fill feeders with chicken feed", emoji: "🐔", active: true },
-      { id: 2, name: "Collect Eggs", frequency: "Daily", assignee: "Kid 2", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Gather fresh eggs from nesting boxes", emoji: "🥚", active: true },
-      { id: 3, name: "Clean Coop", frequency: "Custom", assignee: "Dad", points: 10, daysOfWeek: ["Saturday"], notes: "Deep clean chicken coop and replace bedding", emoji: "🧹", active: true },
-      { id: 4, name: "Refill Chickens' Water", frequency: "Daily", assignee: "Kid 2", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Check and refill water containers", emoji: "💧", active: true },
-      { id: 5, name: "Clean Water Bowl", frequency: "Custom", assignee: "Mom", points: 5, daysOfWeek: ["Sunday"], notes: "Scrub and sanitize water containers", emoji: "🧽", active: true },
-      { id: 6, name: "Check Feed Storage", frequency: "Custom", assignee: "Dad", points: 5, daysOfWeek: ["Friday"], notes: "Verify feed levels and quality", emoji: "📦", active: true },
-      { id: 7, name: "Supervised Free Range", frequency: "Daily", assignee: "Kid 1", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Let chickens roam in yard with supervision", emoji: "🐓", active: true },
-      { id: 8, name: "Check for Illness", frequency: "Daily", assignee: "Mom", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Observe chickens for signs of illness", emoji: "🔍", active: true },
-      { id: 9, name: "Secure Coop at Night", frequency: "Daily", assignee: "Dad", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Close and lock coop doors for safety", emoji: "🔒", active: true },
-      { id: 10, name: "Replace Bedding", frequency: "Custom", assignee: "Mom", points: 5, daysOfWeek: ["Wednesday"], notes: "Add fresh bedding material to coop", emoji: "🛏️", active: true },
-      { id: 11, name: "Feed Dogs", frequency: "Daily", assignee: "Kid 2", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Fill dog food bowls", emoji: "🐶", active: true }
+      { id: 1, name: "Feed Chickens", frequency: "Daily", assignee: "Kid 1", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Fill feeders with chicken feed", emoji: "🐔", active: true, timeOfDay: "Morning" },
+      { id: 2, name: "Feed Chickens", frequency: "Daily", assignee: "Kid 2", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Fill feeders with chicken feed", emoji: "🐔", active: true, timeOfDay: "Evening" },
+      { id: 3, name: "Collect Eggs", frequency: "Daily", assignee: "Kid 1", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Gather fresh eggs from nesting boxes", emoji: "🥚", active: true, timeOfDay: "Evening" },
+      { id: 4, name: "Clean Coop", frequency: "Specific", assignee: "Dad", points: 10, daysOfWeek: ["Saturday"], notes: "Deep clean chicken coop and replace bedding", emoji: "🧹", active: true, timeOfDay: "Anytime" },
+      { id: 5, name: "Refill Chickens' Water", frequency: "Specific", assignee: "Kid 2", points: 5, daysOfWeek: ["Monday", "Wednesday", "Friday"], notes: "Check and refill water containers", emoji: "💧", active: true, timeOfDay: "Morning" },
+      { id: 6, name: "Clean Water Bowl", frequency: "Specific", assignee: "Mom", points: 5, daysOfWeek: ["Sunday"], notes: "Scrub and sanitize water containers", emoji: "🧽", active: true, timeOfDay: "Anytime" },
+      { id: 7, name: "Check Feed Storage", frequency: "Specific", assignee: "Dad", points: 5, daysOfWeek: ["Friday"], notes: "Verify feed levels and quality", emoji: "📦", active: true, timeOfDay: "Anytime" },
+      { id: 8, name: "Supervised Free Range", frequency: "Daily", assignee: "Kid 1", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Let chickens roam in yard with supervision", emoji: "🐓", active: true, timeOfDay: "Evening" },
+      { id: 9, name: "Check for Illness", frequency: "Daily", assignee: "Mom", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Observe chickens for signs of illness", emoji: "🔍", active: true, timeOfDay: "Anytime" },
+      { id: 10, name: "Secure Coop at Night", frequency: "Daily", assignee: "Dad", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Close and lock coop doors for safety", emoji: "🔒", active: true, timeOfDay: "Evening" },
+      { id: 11, name: "Feed Dogs", frequency: "Daily", assignee: "Dad", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Fill dog food bowls", emoji: "🐶", active: true, timeOfDay: "Morning" },
+      { id: 12, name: "Feed Dogs", frequency: "Daily", assignee: "Mom", points: 5, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "Fill dog food bowls", emoji: "🐶", active: true, timeOfDay: "Evening" }
     ];
 
     const initialUsers = [
-      { name: "Mom", points: 0, badges: [], avatar: "👩", color: "blue" },
-      { name: "Dad", points: 0, badges: [], avatar: "👨", color: "purple" },
+      { name: "Mom", points: 0, badges: [], avatar: "👩", color: "pink" },
+      { name: "Dad", points: 0, badges: [], avatar: "👨", color: "blue" },
       { name: "Kid 1", points: 0, badges: [], avatar: "🧑", color: "orange" },
-      { name: "Kid 2", points: 0, badges: [], avatar: "👦", color: "pink" },
+      { name: "Kid 2", points: 0, badges: [], avatar: "👦", color: "green" },
     ];
-    
+
     const getInitialState = () => ({
         tasks: JSON.parse(localStorage.getItem("tasks")) || initialTasks,
         users: JSON.parse(localStorage.getItem("users")) || initialUsers,
@@ -158,7 +159,7 @@
     });
 
     const presetTasks = [
-        { name: "Feed Chickens", points: 10, frequency: "Daily", notes: "Fill feeders with chicken feed", emoji: "🌾", active: true, assignee: "Kid 1" },
+        { name: "Feed Chickens", points: 5, frequency: "Daily", notes: "Fill feeders with chicken feed", emoji: "🌾", active: true, assignee: "Kid 1" },
         { name: "Collect Eggs", points: 5, frequency: "Daily", notes: "Gather fresh eggs from nesting boxes", emoji: "🥚", active: true, assignee: "Kid 2" },
         { name: "Clean Coop", points: 10, frequency: "Custom", daysOfWeek: ["Saturday"], notes: "Deep clean chicken coop and replace bedding", emoji: "🧹", active: true, assignee: "Dad" },
         { name: "Refill Water", points: 5, frequency: "Daily", notes: "Check and refill water containers", emoji: "💧", active: true, assignee: "Kid 2" },
@@ -285,7 +286,7 @@
       const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       const [emojiPickerTarget, setEmojiPickerTarget] = useState(null);
       const [selectedEmojiCategory, setSelectedEmojiCategory] = useState("Smileys & People");
-      
+
       // Add this state for the add member avatar picker
       // const [newMemberEmojiCategory, setNewMemberEmojiCategory] = useState("Smileys & People");
 
@@ -294,9 +295,9 @@
         if (!user || !user.uid) return;
         const { db, doc, setDoc } = window.firebaseDb;
         const userDocRef = doc(db, 'families', user.uid);
-        
+
         console.log(`Initializing Firestore for new user: ${user.uid}`);
-        
+
         const initialData = {
           familyName: familyName,
           createdAt: new Date().toISOString(),
@@ -323,7 +324,7 @@
           alert("Could not initialize your account data. Please try again.");
         }
       };
-      
+
       // Check authentication state on app load and set up data listener
       useEffect(() => {
         if (!window.firebaseAuth || !window.firebaseDb) return;
@@ -332,7 +333,7 @@
 
         const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
             let firestoreListener = () => {}; // No-op function for unsubscribing
-            
+
             if (user) {
                 // --- USER IS LOGGED IN ---
                 console.log("User is logged in:", user.uid);
@@ -345,7 +346,7 @@
                     if (docSnap.exists()) {
                         console.log("Firestore data received.");
                         const data = docSnap.data();
-                        
+
                         // Load data from Firestore
                         setTasks(data.tasks || initialTasks);
                         setUsers(data.users || initialUsers);
@@ -353,7 +354,7 @@
                         setTaskCompletions(data.taskCompletions || {});
                         setLastWeeklyReset(data.lastWeeklyReset || null);
                         setLastResetDate(data.lastResetDate || new Date().toDateString());
-                        
+
                         // Set flag to allow saving updates
                         isInitialLoad.current = false;
                     } else {
@@ -371,7 +372,7 @@
                 // --- USER IS A GUEST ---
                 console.log("User is a guest.");
                 setCurrentUser(null);
-                
+
                 // Load from localStorage
                 const localData = getInitialState();
                 setTasks(localData.tasks);
@@ -384,7 +385,7 @@
                 isInitialLoad.current = false;
                 setIsLoading(false);
             }
-            
+
             // Cleanup the previous listener when auth state changes
             return () => {
                 console.log("Cleaning up Firestore listener.");
@@ -400,7 +401,7 @@
       useEffect(() => {
         // Don't save on the very first render before data is loaded
         if (isInitialLoad.current) return;
-        
+
         // Clear any existing timer
         if (dataSyncTimer.current) {
             clearTimeout(dataSyncTimer.current);
@@ -441,7 +442,7 @@
             localStorage.setItem("lastWeeklyReset", lastWeeklyReset);
             localStorage.setItem("lastResetDate", lastResetDate);
         }
-        
+
       }, [tasks, users, customBadges, taskCompletions, lastWeeklyReset, lastResetDate, currentUser]);
 
 
@@ -489,21 +490,21 @@
               localStorage.removeItem("customBadges");
               localStorage.removeItem("taskCompletions");
               localStorage.removeItem("lastWeeklyReset");
-              
+
               // Reset to initial state
               setTasks(initialTasks);
               setUsers(initialUsers);
               setCustomBadges({});
               setTaskCompletions({});
               setLastWeeklyReset(null);
-              
+
               console.log("Guest mode data reset at midnight");
             } else {
               // For authenticated users, only reset daily task completions
               const dateKey = getDateKey(new Date());
               setTaskCompletions(prev => ({ ...prev, [dateKey]: {} }));
             }
-            
+
             setLastResetDate(today);
           }
         };
@@ -602,14 +603,14 @@
           id: Date.now(),
           name: `${task.name} (Copy)`
         };
-        
+
         // Find the index of the original task
         const originalIndex = tasks.findIndex(t => t.id === task.id);
-        
+
         // Create new tasks array with the copy inserted right after the original
         const newTasks = [...tasks];
         newTasks.splice(originalIndex + 1, 0, duplicatedTask);
-        
+
         setTasks(newTasks);
       };
 
@@ -676,22 +677,22 @@
           }
         };
         setCustomBadges(updatedCustomBadges);
-        
+
         // Immediately check if any users already meet the requirements for this new badge
         setUsers(prevUsers => {
           return prevUsers.map(user => {
             const userTasks = tasks.filter(t => t.assignee === user.name);
             const updatedUser = { ...user };
-            
+
             // Check if user meets the requirements for the new badge
             if (newCustomBadge.points > 0 && user.points >= newCustomBadge.points && !user.badges.includes(newCustomBadge.name)) {
               updatedUser.badges = [...user.badges, newCustomBadge.name];
             }
-            
+
             return updatedUser;
           });
         });
-        
+
         setNewCustomBadge({ name: "", emoji: "🏅", description: "", points: 0 });
       };
 
@@ -701,11 +702,11 @@
           [badgeName]: { ...updatedInfo, isCustom: badgeDefinitions[badgeName]?.isCustom }
         };
         setCustomBadges(updatedCustomBadges);
-        
+
         // Only check user badges when editing is complete, not on every keystroke
         // This prevents the form from closing while typing
       };
-      
+
       const saveBadgeChanges = (badgeName, updatedInfo) => {
         // Immediately check if any users meet the updated requirements for this badge
         setUsers(prevUsers => {
@@ -713,7 +714,7 @@
             const updatedUser = { ...user };
             const hasBadge = user.badges.includes(badgeName);
             const meetsRequirements = updatedInfo.points > 0 && user.points >= updatedInfo.points;
-            
+
             if (meetsRequirements && !hasBadge) {
               // User meets requirements but doesn't have badge - award it
               updatedUser.badges = [...user.badges, badgeName];
@@ -721,11 +722,11 @@
               // User no longer meets requirements but has badge - remove it
               updatedUser.badges = user.badges.filter(badge => badge !== badgeName);
             }
-            
+
             return updatedUser;
           });
         });
-        
+
         setEditingBadge(null);
       };
 
@@ -790,7 +791,7 @@
         if (allCompletedTasks.filter(t => t.name.toLowerCase().includes("egg")).length >= 5) newBadges.push("Egg Expert");
         if (allCompletedTasks.filter(t => t.name.toLowerCase().includes("feed")).length >= 7) newBadges.push("Feed Master");
         if (allCompletedTasks.filter(t => t.name.toLowerCase().includes("clean")).length >= 3) newBadges.push("Clean Machine");
-        
+
         const userDailyTasks = userTasks.filter(t => {
           const currentDay = selectedDate.toLocaleDateString('en-US', { weekday: 'long' });
           return t.daysOfWeek && t.daysOfWeek.includes(currentDay);
@@ -995,7 +996,7 @@
               // This is an unlikely edge case, but good to have
               console.warn("User is authenticated but has no Firestore document!");
           }
-          
+
           // onAuthStateChanged will handle data loading
           navigateToPage(PAGES.TASKS);
         } catch (error) {
@@ -1257,13 +1258,13 @@
               <div className="max-w-md w-full">
                 <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100 text-center">
                   <div className="text-6xl mb-6">🐔</div>
-                  <h1 className="text-2xl font-bold text-gray-800 mb-4">Welcome to Chicken Chores!</h1>
+                  <h1 className="text-2xl font-bold text-gray-800 mb-4">Welcome to Farm Fam!</h1>
                   <p className="text-gray-600 mb-8">Let's get you started!</p>
                   <button
                     onClick={completeOnboarding}
                     className="w-full bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105"
                   >
-                    Start Using Chicken Chores! 🐔
+                    Start Using Farm Fam! 🐔
                   </button>
                 </div>
               </div>
@@ -1543,7 +1544,7 @@
           if (confirm(`Are you sure you want to remove ${memberName} from the family? This will also remove all their task assignments.`)) {
             const remainingUsers = users.filter(user => user.name !== memberName);
             setUsers(remainingUsers);
-            
+
             if (remainingUsers.length > 0) {
               const newAssignee = remainingUsers[0].name;
               setTasks(tasks.map(task => 
@@ -2007,7 +2008,7 @@
                         </span>
                       </div>
                       <p className="text-xs text-gray-600 mb-3">
-                        You're using Chicken Chores as a guest. Your data is saved locally but won't sync across devices and resets daily at midnight.
+                        You're using Farm Fam as a guest. Your data is saved locally but won't sync across devices and resets daily at midnight.
                       </p>
                       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3">
                         <h5 className="text-xs font-semibold text-yellow-800 mb-1">Why create an account?</h5>
@@ -2019,7 +2020,7 @@
                         </ul>
                       </div>
 
-                      
+
                     </div>
 
                     <div className="space-y-2">
@@ -2133,7 +2134,7 @@
               <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
                 <div className="text-center mb-6">
                   <div className="text-6xl mb-4">🐔</div>
-                  <h1 className="text-2xl font-bold text-gray-800 mb-2">Welcome to Chicken Chores</h1>
+                  <h1 className="text-2xl font-bold text-gray-800 mb-2">Welcome to Farm Fam</h1>
                   <p className="text-gray-600 mb-6">Sign in to your account or create a new one to save your progress</p>
                 </div>
 
@@ -2337,7 +2338,7 @@
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center">
-                    <div className="flex items-center bg-gray-100 rounded-xl px-3 py-2">
+                    <div className="flex items-center bg-blue-100 rounded-xl px-3 py-2">
                       <div className="text-2xl mr-2">
                         {(() => {
                           if (!selectedProfile || selectedProfile === "Family") {
@@ -2509,7 +2510,7 @@
                     <div className="space-y-6">
                       {Object.entries(tasksByTime).map(([timeOfDay, tasks]) => {
                         if (tasks.length === 0) return null;
-                        
+
                         return (
                           <div key={timeOfDay}>
                             {/* Time Section Header */}
@@ -2521,7 +2522,7 @@
                                 {tasks.filter(t => isTaskCompleted(t.id, selectedDate)).length}/{tasks.length}
                               </span>
                             </div>
-                            
+
                             {/* Tasks in this time period */}
                             <div className="space-y-3">
                               {tasks.map(task => (
@@ -2662,6 +2663,15 @@
                 </div>
               )}
 
+              {/* Edit Tasks Button */}
+              <div className="mt-6 mb-4">
+                <button
+                  onClick={() => navigateToPage(PAGES.TASK_EDITOR)}
+                  className="w-full bg-blue-100 hover:bg-blue-200 text-blue-800 font-semibold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg"
+                >
+                  ✏️ Edit Tasks
+                </button>
+              </div>
 
             </div>
           )}
@@ -3483,7 +3493,7 @@
                       const user = users.find(u => u.name === selectedProfile);
                       const userIndex = users.findIndex(u => u.name === selectedProfile);
                       const userColor = user?.color;
-                      
+
                       // Get color based on user's theme color
                       let colorClass = "bg-gray-50 border-gray-200";
                       if (userColor) {
@@ -3503,7 +3513,7 @@
                         const colors = ["bg-blue-50 border-blue-200", "bg-purple-50 border-purple-200", "bg-orange-50 border-orange-200", "bg-pink-50 border-pink-200"];
                         colorClass = colors[userIndex] || "bg-gray-50 border-gray-200";
                       }
-                      
+
                       const avatarEmojis = ["👩", "👨", "🧑", "👦"];
                       const userTasks = tasks.filter(t => t.assignee === selectedProfile);
                       const todayTasks = userTasks.filter(t => getTasksForDay(getCurrentDayName()).includes(t));
