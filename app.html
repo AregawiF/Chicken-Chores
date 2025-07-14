@@ -103,13 +103,13 @@
       {
         id: 'welcome',
         title: 'Welcome to Farm Fam! 🐔',
-        content: 'Transform your family\'s farm chore routine into a fun, organized experience!',
+        content: 'Transform your family\'s farm chores into a fun, organized experience!',
         icon: '🏠'
       },
       {
         id: 'tasks',
         title: 'Assign Tasks 📋',
-        content: 'Get kids excited about caring for their animals.',
+        content: 'Make responsibility feel like an adventure on the homestead.',
         icon: '🐔'
       },
       {
@@ -1326,19 +1326,6 @@
 
                     {/* Auth Form */}
                     <form onSubmit={(e) => authMode === 'signup' ? handleSignup(e, authForm) : handleLogin(e, authForm)} className="space-y-4">
-                      {authMode === 'signup' && (
-                        <div>
-                          <input
-                            type="text"
-                            placeholder="Family Name (e.g., The Smiths)"
-                            value={authForm.familyName}
-                            onChange={(e) => setAuthForm({ ...authForm, familyName: e.target.value })}
-                            className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
-                            required
-                          />
-                        </div>
-                      )}
-
                       <div>
                         <input
                           type="email"
@@ -2092,28 +2079,7 @@
                 </button>
               </div>
 
-              {/* *** SECTION RESTORED: App Information Section *** */}
-              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-green-800 mb-1">ℹ️ App Information</h3>
-                    <div className="text-sm text-green-700 space-y-1">
-                      <p><strong>Version:</strong> 2.0.0</p>
-                      <p><strong>Family Members:</strong> {users.length}</p>
-                      <p><strong>Total Tasks:</strong> {tasks.length}</p>
-                      <p><strong>Total Badges:</strong> {Object.keys(badgeDefinitions).length}</p>
-                      {currentUser && (
-                        <p><strong>Account:</strong> Connected</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-green-600">
-                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                </div>
-              </div>
+              
             </div>
           </div>
         );
