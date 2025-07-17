@@ -758,7 +758,7 @@
       };
 
       const checkBadgesWithCompletions = (user, userTasks, allTasks, allUsers, completions) => {
-        let newBadges = [];
+        let newBadges = [...user.badges]; // Start with existing badges
 
         // Helper function to check if task is completed with given completions
         const isTaskCompletedInState = (taskId, date, completionsState) => {
@@ -784,31 +784,33 @@
         // Today's completed tasks using current completion state
         const todayCompletedTasks = userTasks.filter(t => isTaskCompletedInState(t.id, selectedDate, completions));
         const todayDailyTasks = todayCompletedTasks.filter(t => t.frequency === "Daily");
-        if (allCompletedTasks.length >= 1) newBadges.push("First Timer");
-        if (todayDailyTasks.length >= 5) newBadges.push("Daily Hero");
-        if (user.points >= 100) newBadges.push("Century Club");
-        if (allCompletedTasks.filter(t => t.name.toLowerCase().includes("egg")).length >= 5) newBadges.push("Egg Expert");
-        if (allCompletedTasks.filter(t => t.name.toLowerCase().includes("feed")).length >= 7) newBadges.push("Feed Master");
-        if (allCompletedTasks.filter(t => t.name.toLowerCase().includes("clean")).length >= 3) newBadges.push("Clean Machine");
+        
+        // Check for new badges to award
+        if (allCompletedTasks.length >= 1 && !newBadges.includes("First Timer")) newBadges.push("First Timer");
+        if (todayDailyTasks.length >= 5 && !newBadges.includes("Daily Hero")) newBadges.push("Daily Hero");
+        if (user.points >= 100 && !newBadges.includes("Century Club")) newBadges.push("Century Club");
+        if (allCompletedTasks.filter(t => t.name.toLowerCase().includes("egg")).length >= 5 && !newBadges.includes("Egg Expert")) newBadges.push("Egg Expert");
+        if (allCompletedTasks.filter(t => t.name.toLowerCase().includes("feed")).length >= 7 && !newBadges.includes("Feed Master")) newBadges.push("Feed Master");
+        if (allCompletedTasks.filter(t => t.name.toLowerCase().includes("clean")).length >= 3 && !newBadges.includes("Clean Machine")) newBadges.push("Clean Machine");
 
         const userDailyTasks = userTasks.filter(t => {
           const currentDay = selectedDate.toLocaleDateString('en-US', { weekday: 'long' });
           return t.daysOfWeek && t.daysOfWeek.includes(currentDay);
         });
         const completedDailyTasks = userDailyTasks.filter(t => isTaskCompletedInState(t.id, selectedDate, completions));
-        if (userDailyTasks.length > 0 && completedDailyTasks.length === userDailyTasks.length) newBadges.push("Streak Master");
+        if (userDailyTasks.length > 0 && completedDailyTasks.length === userDailyTasks.length && !newBadges.includes("Streak Master")) newBadges.push("Streak Master");
 
         const todayTasks = allTasks.filter(t => {
           const currentDay = selectedDate.toLocaleDateString('en-US', { weekday: 'long' });
           return t.daysOfWeek && t.daysOfWeek.includes(currentDay);
         });
         const allTasksCompleted = todayTasks.length > 0 && todayTasks.every(t => isTaskCompletedInState(t.id, selectedDate, completions));
-        if (allTasksCompleted) newBadges.push("Team Player");
+        if (allTasksCompleted && !newBadges.includes("Team Player")) newBadges.push("Team Player");
 
-        // After system badge logic, before returning newBadges:
+        // Check custom badges
         Object.entries(badgeDefinitions).forEach(([badgeName, badgeInfo]) => {
           if (badgeInfo.isCustom && badgeInfo.points > 0) {
-            if (user.points >= badgeInfo.points) {
+            if (user.points >= badgeInfo.points && !newBadges.includes(badgeName)) {
               newBadges.push(badgeName);
             }
           }
@@ -845,6 +847,7 @@
               let newPoints = u.points;
               if (task.assignee === u.name) {
                 newPoints = wasCompleted ? u.points - task.points : u.points + task.points;
+                newPoints = Math.max(0, newPoints); // Prevent negative points
               }
 
               const userTasks = tasks.filter(t => t.assignee === u.name);
@@ -852,6 +855,25 @@
 
               // Check badges with the updated completion state
               const newBadges = checkBadgesWithCompletions(updatedUser, userTasks, tasks, prevUsers, newCompletions);
+              
+              // Show badge notification if new badges were earned
+              if (newBadges.length > u.badges.length) {
+                const earnedBadges = newBadges.filter(badge => !u.badges.includes(badge));
+                earnedBadges.forEach(badge => {
+                  setBadgeNotifications(prev => ({
+                    ...prev,
+                    [u.name]: [...(prev[u.name] || []), badge]
+                  }));
+                  // Clear notification after 3 seconds
+                  setTimeout(() => {
+                    setBadgeNotifications(prev => ({
+                      ...prev,
+                      [u.name]: (prev[u.name] || []).filter(b => b !== badge)
+                    }));
+                  }, 3000);
+                });
+              }
+              
               return { ...updatedUser, badges: newBadges };
             });
           });
