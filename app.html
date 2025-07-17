@@ -499,11 +499,8 @@
               setLastWeeklyReset(null);
 
               console.log("Guest mode data reset at midnight");
-            } else {
-              // For authenticated users, only reset daily task completions
-              const dateKey = getDateKey(new Date());
-              setTaskCompletions(prev => ({ ...prev, [dateKey]: {} }));
             }
+            // For authenticated users, don't reset anything daily - badges persist until weekly reset
 
             setLastResetDate(today);
           }
@@ -536,9 +533,11 @@
           const currentWeekStart = getWeekStart(now);
 
           if (!lastWeeklyReset || lastWeeklyReset !== currentWeekStart) {
+            // Reset points and badges for the new week
             const resetUsers = users.map(user => ({ ...user, points: 0, badges: [] }));
             setUsers(resetUsers);
             setLastWeeklyReset(currentWeekStart);
+            console.log("Weekly reset: cleared points and badges for new week");
           }
         };
 
@@ -2569,6 +2568,9 @@
                     const todayTasks = userTasks.filter(t => getTasksForDay(getCurrentDayName()).includes(t));
                     const completedTasks = todayTasks.filter(t => isTaskCompleted(t.id, selectedDate));
                     const completionRate = todayTasks.length ? Math.round((completedTasks.length / todayTasks.length) * 100) : 0;
+                    
+                    // Calculate points earned only on the selected day
+                    const pointsEarnedToday = completedTasks.reduce((sum, task) => sum + task.points, 0);
 
                     const userColor = user?.color;
                     let colorClass = "bg-gray-50 border-gray-200";
@@ -2598,8 +2600,8 @@
                             <div className="text-xs text-gray-600">Today's Tasks</div>
                           </div>
                           <div className="bg-white p-3 rounded-xl text-center shadow-sm">
-                            <div className="text-2xl font-bold text-yellow-600">{user.badges.length}</div>
-                            <div className="text-xs text-gray-600">Badges</div>
+                            <div className="text-2xl font-bold text-yellow-600">{pointsEarnedToday}</div>
+                            <div className="text-xs text-gray-600">Points Today</div>
                           </div>
                         </div>
 
