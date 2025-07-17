@@ -2304,8 +2304,8 @@
               <div className="mb-4">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center">
-                    <div className="flex items-center rounded-xl px-3 py-2 border border-green-200 shadow-sm" style={{ backgroundColor: '#F0F8F0' }}>
-                      <div className="text-2xl mr-2">
+                    <div className="flex items-center rounded-lg px-2 py-1 border border-green-200 shadow-sm" style={{ backgroundColor: '#F0F8F0' }}>
+                      <div className="text-lg mr-1">
                         {(() => {
                           if (!selectedProfile || selectedProfile === "Family") {
                             return "";
@@ -2330,7 +2330,7 @@
                               setSelectedProfile(e.target.value === "Family" ? null : e.target.value);
                             }
                           }}
-                          className="bg-transparent text-lg font-semibold text-gray-800 border-none outline-none cursor-pointer pr-6 appearance-none"
+                          className="bg-transparent text-sm font-medium text-gray-800 border-none outline-none cursor-pointer pr-4 appearance-none"
                         >
                           <option value="Family">🚜 Family</option>
                           {users.map((user, index) => {
@@ -2342,17 +2342,17 @@
                           })}
                           <option value="Add Profile">✏️ Edit Profiles</option>
                         </select>
-                        <div className="absolute right-1 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="absolute right-0 top-1/2 transform -translate-y-1/2 pointer-events-none">
+                          <svg className="w-3 h-3 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
                         </div>
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center bg-gradient-to-r from-yellow-100 to-orange-100 rounded-full px-4 py-2 shadow-sm border border-yellow-200">
-                    <span className="text-2xl mr-2 filter drop-shadow-sm">⭐</span>
-                    <span className="font-bold text-lg text-orange-800">
+                  <div className="flex items-center bg-gradient-to-r from-yellow-100 to-orange-100 rounded-full px-3 py-1 shadow-sm border border-yellow-200">
+                    <span className="text-lg mr-1 filter drop-shadow-sm">⭐</span>
+                    <span className="font-bold text-sm text-orange-800">
                       {(() => {
                         if (!selectedProfile || selectedProfile === "Family") {
                           return users.reduce((total, user) => total + user.points, 0);
