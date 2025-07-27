@@ -13,6 +13,8 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <!-- Chart.js CDN for Insights -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- Stripe.js -->
+  <script src="https://js.stripe.com/v3/"></script>
 
   <!-- Firebase SDK -->
   <script type="module">
@@ -79,7 +81,6 @@
   </script>
 </head>
 <body class="min-h-screen" style="background-color: #F0F8F0;">
-</body>
   <div id="root" class="container mx-auto p-2 sm:p-4"></div>
 
   <script type="text/babel">
@@ -258,6 +259,16 @@
       const [newTask, setNewTask] = useState({ name: "", frequency: "Daily", assignee: "Mom", points: 0, daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], notes: "", startDate: new Date().toISOString().split('T')[0], emoji: "", active: true, timeOfDay: "Anytime" });
       const [showPresets, setShowPresets] = useState(false);
 
+      // Subscription Management State
+      const [subscriptionData, setSubscriptionData] = useState({
+        status: 'none', // 'none', 'active', 'expired', 'cancelled'
+        subscriptionEndDate: null,
+        plan: null, // 'monthly', 'yearly'
+        customerId: null,
+        subscriptionId: null
+      });
+      const [showPaywall, setShowPaywall] = useState(false);
+
       // Page routing and onboarding state
       const [currentPage, setCurrentPage] = useState(() => {
         const hasCompletedOnboarding = localStorage.getItem("hasCompletedOnboarding");
@@ -286,17 +297,124 @@
       const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       const [emojiPickerTarget, setEmojiPickerTarget] = useState(null);
       const [selectedEmojiCategory, setSelectedEmojiCategory] = useState("Smileys & People");
+      const [showPostPaymentButton, setShowPostPaymentButton] = useState(false);
 
-      // Add this state for the add member avatar picker
-      // const [newMemberEmojiCategory, setNewMemberEmojiCategory] = useState("Smileys & People");
+      // *** SECURITY: Check for payment bypass attempts ***
+      const checkForPaymentBypass = () => {
+        if (location.search.includes('success=true')) return false;
+        if (location.search.includes('signup=true')) return false;
+        const pendingSignup = localStorage.getItem("pendingSignup");
+        const pendingGoogleSignup = localStorage.getItem("pendingGoogleSignup");
+        
+        // If user has pending signup data but no valid subscription, they're trying to bypass payment
+        if ((pendingSignup || pendingGoogleSignup) && (!currentUser || subscriptionData.status !== 'active')) {
+          console.warn("🚨 Potential payment bypass detected - clearing fake data");
+          localStorage.removeItem("pendingSignup");
+          localStorage.removeItem("pendingGoogleSignup");
+          return true;
+        }
+          return false;
+      };
 
-      // Initialize a new user's data in Firestore 
-      const initializeFirestoreData = async (user, familyName) => {
-        if (!user || !user.uid) return;
+      // Check for payment bypass on app load
+      useEffect(() => {
+        if (!location.search.includes('success=true')) {
+          if (checkForPaymentBypass()) {
+            console.log('🔒 Payment bypass attempt blocked');
+          }
+        }
+      }, []);
+
+      // *** SECURITY: Server-side payment verification ***
+      const verifyPaymentWithServer = async (email) => {
+        try {
+          const response = await fetch('/api/verify-payment', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email })
+          });
+
+          if (!response.ok) {
+            console.error("❌ Payment verification failed:", response.status);
+          return false;
+        }
+        
+          const result = await response.json();
+          return result.hasValidPayment || false;
+        } catch (error) {
+          console.error("❌ Error verifying payment:", error);
+          return false;
+        }
+      };
+
+      // *** SUBSCRIPTION HELPER FUNCTIONS ***
+      
+      // Check if user has paid subscription (now includes expiration check)
+      const hasActiveSubscription = () => {
+        if (!currentUser || subscriptionData.status !== 'active') {
+          return false;
+        }
+        // Check if subscription has expired based on end date
+        if (subscriptionData.subscriptionEndDate) {
+          const endDate = new Date(subscriptionData.subscriptionEndDate);
+        const now = new Date();
+          
+          if (now > endDate) {
+            // Subscription has expired - update status
+            console.log('⚠️ Subscription has expired:', subscriptionData.subscriptionEndDate);
+            setSubscriptionData(prev => ({
+              ...prev,
+              status: 'expired'
+            }));
+        return false;
+          }
+        }
+        
+        return true;
+      };
+
+      // Check subscription expiration on app load and periodically
+      useEffect(() => {
+        if (!currentUser || subscriptionData.status !== 'active') return;
+
+        const checkExpiration = () => {
+          if (subscriptionData.subscriptionEndDate) {
+            const endDate = new Date(subscriptionData.subscriptionEndDate);
+        const now = new Date();
+            
+            if (now > endDate) {
+              console.log('🚨 Subscription expired on:', subscriptionData.subscriptionEndDate);
+              setSubscriptionData(prev => ({
+                ...prev,
+                status: 'expired'
+              }));
+              alert('⚠️ Your subscription has expired. Please renew to continue using Farm Fam.');
+            }
+          }
+        };
+
+        // Check immediately
+        checkExpiration();
+
+        // Check every hour
+        const interval = setInterval(checkExpiration, 60 * 60 * 1000);
+        
+        return () => clearInterval(interval);
+      }, [currentUser, subscriptionData.subscriptionEndDate, subscriptionData.status]);
+
+      
+
+      // Initialize a new user's data in Firestore (only after payment)
+      const initializeFirestoreData = async (user, familyName, subscriptionInfo) => {
+        if (!user || !user.uid) {
+          console.error("❌ No user or user.uid provided to initializeFirestoreData");
+          return;
+        }
+        
         const { db, doc, setDoc } = window.firebaseDb;
         const userDocRef = doc(db, 'families', user.uid);
-
-        console.log(`Initializing Firestore for new user: ${user.uid}`);
 
         const initialData = {
           familyName: familyName,
@@ -307,11 +425,12 @@
           taskCompletions: {},
           lastWeeklyReset: null,
           lastResetDate: new Date().toDateString(),
+          subscriptionData: subscriptionInfo
         };
 
         try {
           await setDoc(userDocRef, initialData);
-          console.log("Firestore initialized successfully.");
+          setSubscriptionData(subscriptionInfo);
           // Also save the local userAccount info for display purposes
           localStorage.setItem("userAccount", JSON.stringify({
             uid: user.uid,
@@ -319,9 +438,14 @@
             familyName: familyName,
             createdAt: initialData.createdAt
           }));
+          navigateToPage(PAGES.TASKS);
         } catch (error) {
-          console.error("Error initializing Firestore data:", error);
+          console.error("❌ Error initializing Firestore data:", error);
+          console.error("Error code:", error.code);
+          console.error("Error message:", error.message);
+          console.error("Current auth state:", window.firebaseAuth.auth.currentUser);
           alert("Could not initialize your account data. Please try again.");
+          throw error; // Re-throw so the calling function can handle it
         }
       };
 
@@ -330,18 +454,62 @@
         if (!window.firebaseAuth || !window.firebaseDb) return;
         const { auth, onAuthStateChanged } = window.firebaseAuth;
         const { db, doc, onSnapshot } = window.firebaseDb;
+        let currentFirestoreListener = null; // Track the current listener
 
         const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-            let firestoreListener = () => {}; // No-op function for unsubscribing
+            // Clean up any existing Firestore listener first
+            if (currentFirestoreListener) {
+                currentFirestoreListener();
+                currentFirestoreListener = null;
+            }
+
+            // If pending signup, do NOT treat as logged in
+            const pendingEmailSignup = localStorage.getItem("pendingSignup");
+            const pendingGoogleSignup = localStorage.getItem("pendingGoogleSignup");
+            
+            if ((pendingEmailSignup || pendingGoogleSignup) && user) {
+                // Check if we're in the middle of post-payment signup
+                const isPostPaymentSignup = window.location.search.includes('success=true') 
+                                            || location.search.includes('success=true')
+                                            || document.querySelector('[data-post-payment="true"]');
+                
+                if (isPostPaymentSignup) {
+                    setCurrentUser(user);
+                    setIsLoading(false);
+                    return;
+                }
+                
+                // For Google signup, we need to handle the family name prompt first
+                // Don't sign out immediately - let the Google signup flow handle it
+                if (pendingGoogleSignup) {
+                    // The Google signup flow will handle signing out after family name is entered
+                    setCurrentUser(user);
+                    setIsLoading(false);
+                    return;
+                }
+
+                if (pendingEmailSignup) {
+                    // The Email signup flow will handle signing out after family name is entered
+                    setCurrentUser(user);
+                    setIsLoading(false);
+                    return;
+                }
+                
+                // For email signup, sign out immediately
+                window.firebaseAuth.signOut(auth);
+                setCurrentUser(null);
+                isInitialLoad.current = false;
+                setIsLoading(false);
+                return;
+            }
 
             if (user) {
                 // --- USER IS LOGGED IN ---
-                console.log("User is logged in:", user.uid);
                 setCurrentUser(user);
 
                 const userDocRef = doc(db, 'families', user.uid);
 
-                firestoreListener = onSnapshot(userDocRef, (docSnap) => {
+                currentFirestoreListener = onSnapshot(userDocRef, (docSnap) => {
                     setIsLoading(true);
                     if (docSnap.exists()) {
                         console.log("Firestore data received.");
@@ -355,22 +523,40 @@
                         setLastWeeklyReset(data.lastWeeklyReset || null);
                         setLastResetDate(data.lastResetDate || new Date().toDateString());
 
+                        // Load subscription data (simplified)
+                        if (data.subscriptionData) {
+                          setSubscriptionData(data.subscriptionData);
+                        } else {
+                          // User has no subscription data - they need to pay
+                          setSubscriptionData({
+                            status: 'none',
+                            subscriptionEndDate: null,
+                            plan: null,
+                            customerId: null,
+                            subscriptionId: null
+                          });
+                        }
+
                         // Set flag to allow saving updates
                         isInitialLoad.current = false;
                     } else {
                         // Document doesn't exist - this case is handled by signup
-                        console.log("No Firestore document for this user. Will be created on signup.");
                         isInitialLoad.current = false;
                     }
                     setIsLoading(false);
                 }, (error) => {
                     console.error("Firestore snapshot error:", error);
+                    if (error.code === "permission-denied" || error.message.includes("Missing or insufficient permissions")) {
+                        // Show paywall or friendly message
+                        setShowPaywall(true); // or set a custom state to show a message
+                    } else {
+                        // Other errors
                     alert("Error loading your data. Please refresh.");
+                    }
                     setIsLoading(false);
                 });
             } else {
                 // --- USER IS A GUEST ---
-                console.log("User is a guest.");
                 setCurrentUser(null);
 
                 // Load from localStorage
@@ -388,8 +574,10 @@
 
             // Cleanup the previous listener when auth state changes
             return () => {
-                console.log("Cleaning up Firestore listener.");
-                firestoreListener();
+              unsubscribeAuth();
+              if (currentFirestoreListener) {
+                  currentFirestoreListener();
+              }
             };
         });
 
@@ -397,7 +585,7 @@
         return () => unsubscribeAuth();
       }, []);
 
-      // Effect to save data to Firestore (for logged-in users) or localStorage (for guests)
+      // Effect to save data to Firestore (for logged-in users) or localStorage (for guests/expired)
       useEffect(() => {
         // Don't save on the very first render before data is loaded
         if (isInitialLoad.current) return;
@@ -407,8 +595,7 @@
             clearTimeout(dataSyncTimer.current);
         }
 
-        if (currentUser) {
-            // --- LOGGED-IN USER: Save to Firestore after a delay ---
+        if (currentUser && hasActiveSubscription()) {
             setIsSaving(true);
             dataSyncTimer.current = setTimeout(async () => {
                 const { db, doc, setDoc } = window.firebaseDb;
@@ -420,13 +607,15 @@
                     customBadges,
                     taskCompletions,
                     lastWeeklyReset,
-                    lastResetDate
+                    lastResetDate,
+                    subscriptionData
                 };
 
                 try {
                     // Using { merge: true } is a good practice, though we are saving the whole object.
                     await setDoc(userDocRef, dataToSave, { merge: true });
                     console.log("✅ Data saved to Firestore.");
+                    navigateToPage(PAGES.TASKS);
                 } catch (error) {
                     console.error("Error saving data to Firestore:", error);
                 } finally {
@@ -434,16 +623,20 @@
                 }
             }, 1500); // Debounce for 1.5 seconds
         } else {
-            // --- GUEST USER: Save to localStorage immediately ---
+            // --- GUEST USER OR EXPIRED USER: Save to localStorage immediately ---
             localStorage.setItem("tasks", JSON.stringify(tasks));
             localStorage.setItem("users", JSON.stringify(users));
             localStorage.setItem("customBadges", JSON.stringify(customBadges));
             localStorage.setItem("taskCompletions", JSON.stringify(taskCompletions));
             localStorage.setItem("lastWeeklyReset", lastWeeklyReset);
             localStorage.setItem("lastResetDate", lastResetDate);
+            
+            if (currentUser && subscriptionData.status === 'expired') {
+              console.log("💾 Expired user - saving to localStorage only");
+            }
         }
 
-      }, [tasks, users, customBadges, taskCompletions, lastWeeklyReset, lastResetDate, currentUser]);
+      }, [tasks, users, customBadges, taskCompletions, lastWeeklyReset, lastResetDate, subscriptionData, currentUser]);
 
 
       const getDateKey = (date) => date.toDateString();
@@ -933,31 +1126,22 @@
       // *** AUTHENTICATION FUNCTIONS - UPDATED FOR FIRESTORE ***
       const handleSignup = async (e, authForm) => {
         e.preventDefault();
+        
         if (authForm.password !== authForm.confirmPassword) {
           alert("Passwords don't match!");
           return;
         }
+        
         if (!authForm.email || !authForm.password || !authForm.familyName) {
           alert("Please fill in all fields!");
           return;
         }
 
-        try {
-          const userCredential = await window.firebaseAuth.createUserWithEmailAndPassword(
-            window.firebaseAuth.auth,
-            authForm.email,
-            authForm.password
-          );
-          const user = userCredential.user;
-
-          // Initialize Firestore document for the new user
-          await initializeFirestoreData(user, authForm.familyName);
-
-          navigateToPage(PAGES.TASKS);
-        } catch (error) {
-          console.error("Signup error:", error);
-          alert(error.message);
-        }
+        // Store signup info for after payment
+        localStorage.setItem("pendingSignup", JSON.stringify(authForm));
+        
+        // Show paywall for required subscription
+        setShowPaywall(true);
       };
 
       const handleLogin = async (e, authForm) => {
@@ -982,7 +1166,6 @@
           const docSnap = await getDoc(userDocRef);
 
           if (docSnap.exists()) {
-              console.log("Found user document in Firestore, setting userAccount.");
               const data = docSnap.data();
               // This is the crucial step that was missing
               localStorage.setItem("userAccount", JSON.stringify({
@@ -1015,44 +1198,99 @@
             window.firebaseAuth.googleProvider
           );
           const user = result.user;
-            console.log("Google login successful for:", user.email);
+          console.log("Google login successful for:", user.email);
 
-            // Check if Firestore document exists for this user
-            const { db, doc, getDoc } = window.firebaseDb;
-            const userDocRef = doc(db, 'families', user.uid);
-            const docSnap = await getDoc(userDocRef);
+          // Check if there's existing pending signup data for this email
+          const pendingGoogleSignup = localStorage.getItem("pendingGoogleSignup");
+          if (pendingGoogleSignup) {
+            const signupData = JSON.parse(pendingGoogleSignup);
+            if (signupData.email === user.email) {
+              // Sign out and show paywall again
+              await window.firebaseAuth.signOut(window.firebaseAuth.auth);
+              setShowPaywall(true);
+              return;
+            }
+          }
 
-            if (!docSnap.exists()) {
-                console.log("New Google user detected. Prompting for family name.");
-            let familyName = "";
-            while (!familyName || familyName.trim() === "") {
+          // Check if Firestore document exists for this user
+          const { db, doc, getDoc } = window.firebaseDb;
+          const userDocRef = doc(db, 'families', user.uid);
+          const docSnap = await getDoc(userDocRef);
+
+          if (!docSnap.exists()) {
+            // 1. Check Stripe for active subscription
+            const response = await fetch('/api/restore-subscription', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: user.email })
+            });
+            const result = await response.json();
+            if (result.subscription && result.subscription.status === 'active') {
+              let familyName = "Uknown Family";
               familyName = prompt("Welcome! Please enter your Family Name to continue:");
-                    if (familyName === null) {
-                        console.log("User cancelled sign-up. Signing out.");
+              if (familyName === null) {
                 await window.firebaseAuth.signOut(window.firebaseAuth.auth);
-                        return;
-                    }
-                }
-                // Initialize Firestore for the new Google user
-                await initializeFirestoreData(user, familyName.trim());
+                return;
+              }
+
+              if (!user || !user.uid || user.uid === "pending") {
+                alert("Google authentication failed. Please try again.");
+                await window.firebaseAuth.signOut(window.firebaseAuth.auth);
+                return;
+              }
+              // 2. Create Firestore doc and log in
+              await initializeFirestoreData(user, familyName, {
+                status: 'active',
+                plan: result.subscription.plan,
+                subscriptionEndDate: result.subscription.current_period_end,
+                customerId: result.subscription.customer,
+                subscriptionId: result.subscription.id
+              });
+              // Set userAccount, navigate, etc.
+              return;
             } else {
-                console.log("Returning user logged in via Google.");
-                const data = docSnap.data();
-                localStorage.setItem("userAccount", JSON.stringify({
+              // 3. Prompt for family name, show paywall
+              console.log("New Google user detected. Prompting for family name.");
+              // let familyName = "";
+              // while (!familyName || familyName.trim() === "") {
+              //   familyName = prompt("Welcome! Please enter your Family Name to continue:");
+              //   if (familyName === null) {
+              //     console.log("User cancelled sign-up. Signing out.");
+              //     await window.firebaseAuth.signOut(window.firebaseAuth.auth);
+              //     return;
+              //   }
+              // }
+            // Store Google signup info for after payment (like email signup)
+            console.log("🔥 New Google user needs to pay first");
+              // localStorage.setItem("pendingGoogleSignup", JSON.stringify({
+              //   uid: user.uid,
+              //   email: user.email,
+              //   familyName: familyName.trim(),
+              //   provider: 'google'
+              // }));
+            // Sign out the Google user temporarily until payment is complete
+            await window.firebaseAuth.signOut(window.firebaseAuth.auth);
+            // Show paywall for required subscription
+            setShowPaywall(true);
+            // Do NOT set userAccount or navigate
+            return;
+            }
+          } else {
+            // Returning user logged in via Google
+            const data = docSnap.data();
+            localStorage.setItem("userAccount", JSON.stringify({
               uid: user.uid,
               email: user.email,
-                    familyName: data.familyName,
-                    createdAt: data.createdAt
-                }));
-            }
-          navigateToPage(PAGES.TASKS);
+              familyName: data.familyName,
+              createdAt: data.createdAt
+            }));
+            navigateToPage(PAGES.TASKS);
+          }
         } catch (error) {
           if (error.code === 'auth/popup-closed-by-user') {
-            console.log("Login popup closed by user.");
             return;
           }
-            console.error("Google login error:", error);
-          alert(error.message);
+          console.error("Google login error:", error);
         }
       };
 
@@ -1063,7 +1301,6 @@
             // onAuthStateChanged will fire and reset the state to guest mode
             localStorage.removeItem("userAccount");
             navigateToPage(PAGES.LOGIN);
-            console.log("Logged out successfully");
           } catch (error) {
             console.error("Logout error:", error);
             alert(error.message);
@@ -1178,6 +1415,253 @@
         return () => document.removeEventListener('click', handleClickOutside);
       }, [showEmojiPicker]);
 
+      // *** PAYWALL COMPONENT ***
+      const PaywallModal = () => {
+        if (!showPaywall) return null;
+
+        const handleSubscribe = async (plan) => {
+          try {
+            
+            // Check if this is a new signup (email or Google)
+            const pendingSignup = localStorage.getItem("pendingSignup");
+            const pendingGoogleSignup = localStorage.getItem("pendingGoogleSignup");
+            const isNewSignup = !!(pendingSignup || pendingGoogleSignup);
+            
+            let userInfo = {
+              userId: currentUser?.uid,
+              email: currentUser?.email,
+              familyName: JSON.parse(localStorage.getItem("userAccount") || '{}').familyName
+            };
+
+            // If new signup, use pending signup info
+            if (isNewSignup) {
+              let signupData;
+              if (pendingGoogleSignup) {
+                signupData = JSON.parse(pendingGoogleSignup);
+              } else {
+                signupData = JSON.parse(pendingSignup);
+              }
+              
+              userInfo = {
+                userId: null, // No user account yet
+                email: signupData.email,
+                familyName: signupData.familyName
+              };
+            }
+            
+            // Initialize Stripe (replace with your publishable key)
+            const stripe = Stripe('pk_test_51RnGgYH2JPCj4zv8Dp4ZDvT4MwTVXW01vLhOTB4Rj9CJP9lmvoYprJ2G9HJQ7REAEuwjHXFhI41W9vOkPyST9JM500iUj4bCc1'); // publishable key
+            
+            // Create checkout session
+            const response = await fetch('/api/create-checkout-session', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                plan: plan,
+                userId: userInfo.userId,
+                email: userInfo.email,
+                familyName: userInfo.familyName,
+                isNewSignup: isNewSignup
+              })
+            });
+
+            if (!response.ok) {
+              throw new Error('Failed to create checkout session');
+            }
+
+            const session = await response.json();
+
+            // Redirect to Stripe Checkout
+            const result = await stripe.redirectToCheckout({
+              sessionId: session.id
+            });
+
+            if (result.error) {
+              console.error('Stripe error:', result.error);
+              alert('Payment failed: ' + result.error.message);
+            }
+
+          } catch (error) {
+            console.error('Subscription error:', error);
+            alert('Failed to start subscription. Please try again.');
+          }
+        };
+
+        const handleRestorePurchase = async () => {
+          try {            
+            if (!currentUser) {
+              alert("Please log in to restore your subscription.");
+              return;
+            }
+
+            // Check for existing subscription
+            const response = await fetch('/api/restore-subscription', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                userId: currentUser.uid,
+                email: currentUser.email
+              })
+            });
+
+            if (!response.ok) {
+              throw new Error('Failed to check subscription');
+            }
+
+            const result = await response.json();
+
+            if (result.subscription) {
+              // Update local subscription data
+              const restoredData = {
+                status: result.subscription.status === 'active' ? 'active' : 'expired',
+                plan: result.subscription.plan,
+                subscriptionEndDate: result.subscription.current_period_end,
+                customerId: result.subscription.customer,
+                subscriptionId: result.subscription.id
+              };
+              
+              setSubscriptionData(restoredData);
+              setShowPaywall(false);
+              alert("✅ Subscription restored successfully!");
+            } else {
+              alert("No active subscription found for this account.");
+            }
+
+          } catch (error) {
+            console.error("Error restoring subscription:", error);
+            alert("Failed to restore subscription. Please try again or contact support.");
+          }
+        };
+
+
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[9999] p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto relative">
+              
+              {/* Close Button */}
+              <button
+                onClick={async () => {                  
+                  // Check if user has pending Google signup and is authenticated
+                  const pendingGoogleSignup = localStorage.getItem("pendingGoogleSignup");
+                  if (pendingGoogleSignup && currentUser) {
+                    try {
+                      // Sign out the Google user since they didn't complete payment
+                      await window.firebaseAuth.signOut(window.firebaseAuth.auth);
+                    } catch (error) {
+                      console.error('Error signing out Google user:', error);
+                    }
+                  }
+                  
+                  // Clear any pending signup data
+                  localStorage.removeItem("pendingSignup");
+                  localStorage.removeItem("pendingGoogleSignup");
+                  
+                  // Close the paywall
+                  setShowPaywall(false);
+                }}
+                className="absolute top-4 right-4 w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors z-10"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+              
+              <div className="p-6">
+                {/* Header */}
+                <div className="text-center mb-6">
+                  <div className="text-6xl mb-4">🚀</div>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                    Subscribe to Farm Fam
+                  </h2>
+                  <p className="text-gray-600">
+                    Choose your plan to start using Farm Fam with your family!
+                  </p>
+                </div>
+
+                {/* Features List */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-gray-900 mb-3">Premium Features:</h3>
+                  <div className="space-y-2">
+                    {[
+                      "✅ Cloud sync across devices",
+                      "✅ Priority customer support",
+                      "✅ No daily data resets"
+                    ].map((feature, index) => (
+                      <div key={index} className="flex items-center text-sm text-gray-700">
+                        <span>{feature}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pricing Plans */}
+                <div className="space-y-3 mb-6">
+                  <button
+                    onClick={() => handleSubscribe('monthly')}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-xl font-semibold text-center transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="text-left">
+                        <div className="text-lg">Monthly Plan</div>
+                        <div className="text-sm opacity-90">Cancel anytime</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xl">$4.99</div>
+                        <div className="text-sm opacity-90">/month</div>
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => handleSubscribe('yearly')}
+                    className="w-full bg-green-600 hover:bg-green-700 text-white p-4 rounded-xl font-semibold text-center transition-colors relative"
+                  >
+                    <div className="absolute -top-2 right-4 bg-yellow-400 text-yellow-900 px-2 py-1 rounded-full text-xs font-bold">
+                      SAVE 50%
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="text-left">
+                        <div className="text-lg">Yearly Plan</div>
+                        <div className="text-sm opacity-90">Best value!</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xl">$29.99</div>
+                        <div className="text-sm opacity-90">/year</div>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Restore Purchase & Close */}
+                <div className="space-y-3">
+                  <button
+                    onClick={handleRestorePurchase}
+                    className="w-full text-blue-600 hover:text-blue-800 text-sm font-medium py-2"
+                  >
+                    Already subscribed? Restore Purchase
+                  </button>
+                  
+                </div>
+
+                {/* Terms */}
+                <div className="text-xs text-gray-500 text-center mt-4 pt-4 border-t border-gray-200">
+                  <p>Subscriptions auto-renew. Cancel anytime in settings.</p>
+                  <div className="mt-2 space-x-4">
+                    <a href="#" className="hover:text-gray-700">Privacy Policy</a>
+                    <a href="#" className="hover:text-gray-700">Terms of Service</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+
+      // *** COMPLETION RATE HELPER ***
       const completionRate = () => {
         const total = tasks.length;
         if (!total) return 0;
@@ -1235,6 +1719,228 @@
           }
         }
       }, [view, tasks, taskCompletions, selectedDate]);
+
+      // Handle Stripe Checkout return (success/cancel)
+      useEffect(() => {        
+        const urlParams = new URLSearchParams(window.location.search);
+        const success = urlParams.get('success');
+        const canceled = urlParams.get('canceled');
+
+        if (success === 'true') {
+          window.history.replaceState(null, null, window.location.pathname);
+
+          const isNewSignup = urlParams.get('signup') === 'true';
+          const pendingGoogleSignup = localStorage.getItem("pendingGoogleSignup");
+          const pendingSignup = localStorage.getItem("pendingSignup");
+
+          localStorage.setItem("hasCompletedOnboarding", "true");
+          navigateToPage(PAGES.LOGIN);
+
+          if (isNewSignup) {
+            if (pendingGoogleSignup) {
+              setShowPostPaymentButton(true);
+            } else if (pendingSignup) {
+              handlePostPaymentSignup(); // This will create the account and log in
+            }
+          } else {
+            alert('🎉 Payment successful! Your subscription is being activated...');
+          }
+          localStorage.setItem("hasCompletedOnboarding", "true");
+          window.history.replaceState(null, null, window.location.pathname);
+          
+        } else if (canceled === 'true') {
+          alert('Payment was canceled. You can try again anytime!');
+          window.history.replaceState(null, null, window.location.pathname);
+        }
+      }, []);
+
+      // Sync subscription data from Stripe for newly created users
+      const syncSubscriptionData = async (userId, email) => {
+        try {
+          const response = await fetch('/api/restore-subscription', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              userId: userId,
+              email: email
+            })
+          });
+
+          if (!response.ok) {
+            console.warn('Could not sync subscription data, will be updated by webhook');
+            return;
+          }
+
+          const result = await response.json();
+          if (result.subscription) {
+            const syncedData = {
+              status: 'active',
+              plan: result.subscription.plan,
+              subscriptionEndDate: result.subscription.current_period_end,
+              customerId: result.subscription.customer,
+              subscriptionId: result.subscription.id
+            };
+            
+            setSubscriptionData(syncedData);
+          }
+
+        } catch (error) {
+          console.warn("Could not sync subscription data:", error);
+          // Don't throw - webhook will eventually update this
+        }
+      };
+
+      // Handle account creation after successful payment for new users
+      const handlePostPaymentSignup = async () => {
+        try {
+          const pendingSignup = localStorage.getItem("pendingSignup");
+          const pendingGoogleSignup = localStorage.getItem("pendingGoogleSignup");
+          
+          if (!pendingSignup && !pendingGoogleSignup) {
+            alert("Signup data not found. Please try signing up again.");
+            navigateToPage(PAGES.LOGIN);
+            return;
+          }
+
+          let signupData, user;
+
+          if (pendingGoogleSignup) {
+            // Handle Google signup
+            signupData = JSON.parse(pendingGoogleSignup);            
+            // SECURITY: Verify payment with server before proceeding
+            const hasValidPayment = await verifyPaymentWithServer(signupData.email);
+            if (!hasValidPayment) {
+              alert("❌ Payment verification failed. Please complete payment first.");
+              setShowPostPaymentButton(false);
+              return;
+            }
+            
+            // Re-authenticate with Google to get the user object
+            try {
+              const result = await window.firebaseAuth.signInWithPopup(
+                window.firebaseAuth.auth,
+                window.firebaseAuth.googleProvider
+              );
+              user = result.user;
+              
+              // Verify it's the same user
+              if (user.email !== signupData.email) {
+                console.error("Google account mismatch:", user.email, "vs", signupData.email);
+                alert(`Google account mismatch. Please use the same Google account you signed up with: ${signupData.email}`);
+                // Don't return here - allow user to try again
+                setShowPostPaymentButton(true); // Keep the modal open
+                return;
+              }
+              
+              // Wait a moment for auth state to propagate
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              
+              // Verify user is still authenticated
+              const currentUser = window.firebaseAuth.auth.currentUser;
+              if (!currentUser || currentUser.uid !== user.uid) {
+                throw new Error("Authentication state is inconsistent. Please try again.");
+              }
+              
+            } catch (error) {
+              console.error("Google re-authentication failed:", error);
+              if (error.message.includes("mismatch")) {
+                // For mismatch errors, keep the modal open for retry
+                return;
+              } else {
+                alert("Google authentication failed. Please try again.");
+                setShowPostPaymentButton(true); // Keep the modal open
+              return;
+              }
+            }
+            
+          } else {
+            // Handle email signup  
+            signupData = JSON.parse(pendingSignup);
+            // SECURITY: Verify payment with server before proceeding
+            const hasValidPayment = await verifyPaymentWithServer(signupData.email);
+            if (!hasValidPayment) {
+              alert("❌ Payment verification failed. Please complete payment first.");
+              return;
+            }
+
+            // Create Firebase account
+            const userCredential = await window.firebaseAuth.createUserWithEmailAndPassword(
+              window.firebaseAuth.auth,
+              signupData.email,
+              signupData.password
+            );
+            user = userCredential.user;
+          }
+
+          // Double-check user is authenticated before creating Firestore doc
+          if (!user || !user.uid) {
+            throw new Error("User authentication failed. Please try again.");
+          }
+
+          // Get real subscription data from Stripe before creating Firestore document
+          let subscriptionData = {
+            status: 'active',
+            subscriptionEndDate: null,
+            plan: null,
+            customerId: null,
+            subscriptionId: null
+          };
+
+          try {
+            const response = await fetch('/api/restore-subscription', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                userId: user.uid,
+                email: user.email
+              })
+            });
+
+            if (response.ok) {
+              const result = await response.json();
+              if (result.subscription) {
+                subscriptionData = {
+                  status: 'active',
+                  plan: result.subscription.plan,
+                  subscriptionEndDate: result.subscription.current_period_end,
+                  customerId: result.subscription.customer,
+                  subscriptionId: result.subscription.id
+                };
+              } else {
+                console.warn("No subscription found in Stripe response");
+              }
+            } else {
+              console.warn("Failed to fetch subscription data from Stripe");
+            }
+          } catch (error) {
+            console.warn("Could not fetch subscription data, using defaults:", error);
+          }
+
+          await initializeFirestoreData(user, signupData.familyName, subscriptionData);
+          setSubscriptionData(subscriptionData);
+
+          // Clean up pending signup data
+          localStorage.removeItem("pendingSignup");
+          localStorage.removeItem("pendingGoogleSignup");
+
+          // Hide the modal
+          setShowPostPaymentButton(false);
+
+          // Show success and navigate to tasks
+          alert('🎉 Welcome to Farm Fam! Your account has been created and subscription is active!');
+          navigateToPage(PAGES.TASKS);
+
+        } catch (error) {
+          console.error("Post-payment signup error:", error);
+          alert("There was an error creating your account. Please try again.");
+          // Keep the modal open for retry
+          setShowPostPaymentButton(true);
+        }
+      };
 
       // Onboarding Component
       // Onboarding Page now manages its own form state
@@ -1325,6 +2031,19 @@
 
                     {/* Auth Form */}
                     <form onSubmit={(e) => authMode === 'signup' ? handleSignup(e, authForm) : handleLogin(e, authForm)} className="space-y-4">
+                      {authMode === 'signup' && (
+                        <div>
+                          <input
+                            type="text"
+                            placeholder="Family Name (e.g., The Smiths)"
+                            value={authForm.familyName}
+                            onChange={(e) => setAuthForm({ ...authForm, familyName: e.target.value })}
+                            className="w-full border border-gray-300 rounded-lg px-4 py-3 text-gray-800 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
+                            required
+                          />
+                        </div>
+                      )}
+
                       <div>
                         <input
                           type="email"
@@ -1976,6 +2695,141 @@
                       </div>
                     </div>
 
+                    {/* Subscription Information */}
+                    <div className="bg-white p-4 rounded-lg border border-blue-300">
+                      <h4 className="text-sm font-semibold text-blue-800 mb-3">Subscription Status</h4>
+                      <div className="space-y-3">
+                        {/* Current Plan Status */}
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div>
+                            <div className="font-medium text-gray-800">
+                              {subscriptionData.status === 'active' ? 'Premium Plan' : 
+                               subscriptionData.status === 'expired' ? 'Subscription Expired' :
+                               subscriptionData.status === 'cancelled' ? 'Subscription Cancelled' : 
+                               'No Active Subscription'}
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              {subscriptionData.status === 'active' ? `${subscriptionData.plan} subscription` :
+                               subscriptionData.status === 'expired' ? 'Your subscription has expired. Renew to continue.' :
+                               subscriptionData.status === 'cancelled' ? 'You cancelled your subscription' :
+                               'Subscribe to access all features'}
+                            </div>
+                          </div>
+                          <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+                            subscriptionData.status === 'active' ? 'bg-green-100 text-green-800' :
+                            subscriptionData.status === 'expired' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {subscriptionData.status === 'active' ? '✅ ACTIVE' :
+                             subscriptionData.status === 'expired' ? '⚠️ EXPIRED' :
+                             subscriptionData.status === 'cancelled' ? '❌ CANCELLED' :
+                             '❌ INACTIVE'}
+                          </div>
+                        </div>
+
+                        {/* Subscription Details */}
+                        {(subscriptionData.status === 'active' || subscriptionData.status === 'expired') && (
+                          <div className="text-sm space-y-2">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Plan:</span>
+                              <span className="text-gray-800 font-medium capitalize">{subscriptionData.plan || 'N/A'}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">
+                                {subscriptionData.status === 'expired' ? 'Expired on:' : 'Next billing:'}
+                              </span>
+                              <span className={`font-medium ${
+                                subscriptionData.status === 'expired' ? 'text-red-600' : 'text-gray-800'
+                              }`}>
+                                {subscriptionData.subscriptionEndDate ? 
+                                  new Date(subscriptionData.subscriptionEndDate).toLocaleDateString() : 
+                                  'N/A'
+                                }
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Price:</span>
+                              <span className="text-gray-800 font-medium">
+                                {subscriptionData.plan === 'yearly' ? '$29.99/year' : '$4.99/month'}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Action Buttons */}
+                        <div className="space-y-2 pt-2">
+                          {subscriptionData.status === 'active' ? (
+                            <div className="space-y-2">
+                              <button
+                                onClick={async () => {
+                                  if (confirm('Are you sure you want to cancel your subscription? You will lose access to premium features.')) {
+                                    try {
+                                      // Call backend to cancel subscription
+                                      const response = await fetch('/api/cancel-subscription', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                          userId: currentUser?.uid,
+                                          subscriptionId: subscriptionData.subscriptionId
+                                        })
+                                      });
+                                      if (!response.ok) {
+                                        throw new Error('Failed to cancel subscription');
+                                      }
+                                      // Update local state only after backend success
+                                      const cancelledData = {
+                                        ...subscriptionData,
+                                        status: 'cancelled'
+                                      };
+                                      setSubscriptionData(cancelledData);
+                                      alert('Subscription cancelled successfully.');
+                                      try {
+                                        await window.firebaseAuth.signOut(window.firebaseAuth.auth);
+                                        // onAuthStateChanged will fire and reset the state to guest mode
+                                        localStorage.removeItem("userAccount");
+                                        navigateToPage(PAGES.LOGIN);
+                                      } catch (error) {
+                                        console.error("Error signing out:", error);
+                                      }
+                                    } catch (error) {
+                                      alert('Failed to cancel subscription. Please try again.');
+                                      console.error(error);
+                                    }
+                                  }
+                                }}
+                                className="w-full bg-red-600 hover:bg-red-700 text-white p-2 rounded-lg text-sm transition-colors"
+                              >
+                                Cancel Subscription
+                              </button>
+                            </div>
+                          ) : subscriptionData.status === 'expired' ? (
+                            <div className="space-y-2">
+                              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3">
+                                <p className="text-xs text-yellow-800 font-medium">
+                                  ⚠️ Your subscription expired on {subscriptionData.subscriptionEndDate ? 
+                                    new Date(subscriptionData.subscriptionEndDate).toLocaleDateString() : 'N/A'}. 
+                                  Renew now to restore access to your data and premium features.
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => setShowPaywall(true)}
+                                className="w-full bg-green-600 hover:bg-green-700 text-white p-3 rounded-lg font-medium transition-colors"
+                              >
+                                🔄 Renew Subscription
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setShowPaywall(true)}
+                              className="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg font-medium transition-colors"
+                            >
+                              📝 Subscribe to Farm Fam
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
                     <button
                       onClick={handleLogout}
                       className="w-full bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-lg font-medium transition-colors"
@@ -2236,22 +3090,34 @@
 
       // Show onboarding if not completed
       if (currentPage === PAGES.ONBOARDING) {
-        return <OnboardingPage 
+        return (
+          <div>
+            <OnboardingPage 
           handleSignup={handleSignup} 
           handleLogin={handleLogin} 
           handleGoogleLogin={handleGoogleLogin} 
           navigateToPage={navigateToPage} 
-        />;
+            />
+            {/* PaywallModal needs to be available during onboarding */}
+            <PaywallModal />
+          </div>
+        );
       }
 
       // Show login page
       if (currentPage === PAGES.LOGIN) {
-        return <LoginPage 
+        return (
+          <div>
+            <LoginPage 
           handleSignup={handleSignup} 
           handleLogin={handleLogin} 
           handleGoogleLogin={handleGoogleLogin} 
           navigateToPage={navigateToPage} 
-        />;
+            />
+            {/* PaywallModal needs to be available during login/signup */}
+            <PaywallModal />
+          </div>
+        );
       }
 
       return (
@@ -2260,8 +3126,8 @@
           {/* Emoji Picker Modal */}
           <EmojiPicker />
 
-
-
+          {/* Paywall Modal */}
+          <PaywallModal />
 
           {/* Mobile Footer Navigation */}
           <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
@@ -2295,6 +3161,43 @@
               </button>
             </div>
           </div>
+
+          {/* Expired Subscription Banner */}
+          {currentUser && subscriptionData.status === 'expired' && currentPage === PAGES.TASKS && (
+            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4" data-expired-banner>
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <span className="text-yellow-400 text-xl">⚠️</span>
+                </div>
+                <div className="ml-3 flex-1">
+                  <p className="text-sm font-medium text-yellow-800">
+                    Your subscription has expired
+                  </p>
+                  <p className="text-xs text-yellow-700 mt-1">
+                    You can continue using Farm Fam, but your data is only saved locally and won't sync across devices. 
+                    <button 
+                      onClick={() => setShowPaywall(true)}
+                      className="underline hover:no-underline font-medium ml-1"
+                    >
+                      Renew subscription
+                    </button> to restore cloud sync.
+                  </p>
+                </div>
+                <div className="flex-shrink-0">
+                  <button 
+                    onClick={() => {
+                      // Hide banner for this session
+                      const banner = document.querySelector('[data-expired-banner]');
+                      if (banner) banner.style.display = 'none';
+                    }}
+                    className="text-yellow-700 hover:text-yellow-900 text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Tasks View - New Mobile-Inspired Layout */}
           {currentPage === PAGES.TASKS && (
@@ -4323,6 +5226,88 @@
 
           {/* Settings View */}
           {currentPage === PAGES.SETTINGS && <SettingsPage />}
+
+          {/*
+          // {showPostPaymentButton && (
+          //   <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[9999]" data-post-payment="true">
+          //     <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 flex flex-col items-center">
+          //       <h2 className="text-xl font-bold mb-4">Finish Account Setup</h2>
+          //       <p className="mb-4 text-gray-700">Click the button below to complete your account creation.</p>
+          //       <button
+          //         className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold text-lg transition-colors"
+          //         onClick={async () => {
+          //           setShowPostPaymentButton(false);
+          //           await handlePostPaymentSignup();
+          //         }}
+          //       >
+          //         Finish Account Setup
+          //       </button>
+          //     </div>
+          //   </div>
+          // )}
+          */}
+
+          {showPostPaymentButton && (
+            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[9999] p-4" data-post-payment="true">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 flex flex-col items-center">
+                {/* Success Icon */}
+                <div className="text-6xl mb-4 animate-bounce">🎉</div>
+                
+                {/* Title */}
+                <h2 className="text-2xl font-bold mb-4 text-center text-gray-900">
+                  Payment Successful!
+                </h2>
+                
+                {/* Description */}
+                <div className="text-center mb-6">
+                  <p className="text-gray-700 mb-2">
+                    Your subscription is active! Now let's finish setting up your account.
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    {(() => {
+                      const pendingGoogleSignup = localStorage.getItem("pendingGoogleSignup");
+                      if (pendingGoogleSignup) {
+                        const signupData = JSON.parse(pendingGoogleSignup);
+                        return `Please sign in with your Google account: ${signupData.email}`;
+                      }
+                      return "Complete your account setup to start using Farm Fam.";
+                    })()}
+                  </p>
+                </div>
+
+                {/* Action Button */}
+                <button
+                  className="w-full bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white px-6 py-4 rounded-xl font-semibold text-lg transition-all duration-200 transform hover:scale-105 shadow-lg mb-4"
+                  onClick={async () => {
+                    await handlePostPaymentSignup();
+                  }}
+                >
+                  {(() => {
+                    const pendingGoogleSignup = localStorage.getItem("pendingGoogleSignup");
+                    return pendingGoogleSignup ? "Sign in with Google" : "Complete Setup";
+                  })()}
+                </button>
+
+                {/* Help Text */}
+                <div className="text-center">
+                  <p className="text-xs text-gray-500 mb-2">
+                    Having trouble? Make sure you're using the same account you signed up with.
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (confirm("Are you sure you want to cancel? You can always complete setup later from the login page.")) {
+                        setShowPostPaymentButton(false);
+                        // Don't clear the pending signup data in case they want to try again
+                      }
+                    }}
+                    className="text-sm text-gray-400 hover:text-gray-600 underline"
+                  >
+                    Skip for now
+                </button>
+                </div>
+              </div>
+            </div>
+          )}
 
         </div>
       );
