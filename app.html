@@ -297,7 +297,6 @@
       const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       const [emojiPickerTarget, setEmojiPickerTarget] = useState(null);
       const [selectedEmojiCategory, setSelectedEmojiCategory] = useState("Smileys & People");
-      const [showPostPaymentButton, setShowPostPaymentButton] = useState(false);
 
       // *** SECURITY: Check for payment bypass attempts ***
       const checkForPaymentBypass = () => {
@@ -1112,7 +1111,7 @@
 
       const completeOnboarding = () => {
         localStorage.setItem("hasCompletedOnboarding", "true");
-        navigateToPage(PAGES.TASKS);
+        navigateToPage(PAGES.LOGIN);
       };
 
       const resetOnboarding = () => {
@@ -1246,30 +1245,10 @@
               // Set userAccount, navigate, etc.
               return;
             } else {
-              // 3. Prompt for family name, show paywall
               console.log("New Google user detected. Prompting for family name.");
-              // let familyName = "";
-              // while (!familyName || familyName.trim() === "") {
-              //   familyName = prompt("Welcome! Please enter your Family Name to continue:");
-              //   if (familyName === null) {
-              //     console.log("User cancelled sign-up. Signing out.");
-              //     await window.firebaseAuth.signOut(window.firebaseAuth.auth);
-              //     return;
-              //   }
-              // }
-            // Store Google signup info for after payment (like email signup)
-            console.log("🔥 New Google user needs to pay first");
-              // localStorage.setItem("pendingGoogleSignup", JSON.stringify({
-              //   uid: user.uid,
-              //   email: user.email,
-              //   familyName: familyName.trim(),
-              //   provider: 'google'
-              // }));
-            // Sign out the Google user temporarily until payment is complete
-            await window.firebaseAuth.signOut(window.firebaseAuth.auth);
-            // Show paywall for required subscription
-            setShowPaywall(true);
-            // Do NOT set userAccount or navigate
+              console.log("🔥 New Google user needs to pay first");
+              await window.firebaseAuth.signOut(window.firebaseAuth.auth);
+              setShowPaywall(true);
             return;
             }
           } else {
@@ -1735,12 +1714,12 @@
 
           if (isNewSignup) {
             if (pendingGoogleSignup) {
-              setShowPostPaymentButton(true);
+              navigateToPage(PAGES.LOGIN);
             } else if (pendingSignup) {
               handlePostPaymentSignup(); // This will create the account and log in
             }
           } else {
-            alert('🎉 Payment successful! Your subscription is being activated...');
+            alert('🎉 Payment successful! Your subscription is being activated... Please login with the same email to continue');
           }
           localStorage.setItem("hasCompletedOnboarding", "true");
           window.history.replaceState(null, null, window.location.pathname);
@@ -1810,7 +1789,6 @@
             const hasValidPayment = await verifyPaymentWithServer(signupData.email);
             if (!hasValidPayment) {
               alert("❌ Payment verification failed. Please complete payment first.");
-              setShowPostPaymentButton(false);
               return;
             }
             
@@ -1826,8 +1804,6 @@
               if (user.email !== signupData.email) {
                 console.error("Google account mismatch:", user.email, "vs", signupData.email);
                 alert(`Google account mismatch. Please use the same Google account you signed up with: ${signupData.email}`);
-                // Don't return here - allow user to try again
-                setShowPostPaymentButton(true); // Keep the modal open
                 return;
               }
               
@@ -1847,7 +1823,6 @@
                 return;
               } else {
                 alert("Google authentication failed. Please try again.");
-                setShowPostPaymentButton(true); // Keep the modal open
               return;
               }
             }
@@ -1967,9 +1942,6 @@
           localStorage.removeItem("pendingSignup");
           localStorage.removeItem("pendingGoogleSignup");
 
-          // Hide the modal
-          setShowPostPaymentButton(false);
-
           // Show success and navigate to tasks
           alert('🎉 Welcome to Farm Fam! Your account has been created and subscription is active!');
           navigateToPage(PAGES.TASKS);
@@ -1977,8 +1949,6 @@
         } catch (error) {
           console.error("Post-payment signup error:", error);
           alert("There was an error creating your account. Please try again.");
-          // Keep the modal open for retry
-          setShowPostPaymentButton(true);
         }
       };
 
@@ -5311,88 +5281,6 @@
 
           {/* Settings View */}
           {currentPage === PAGES.SETTINGS && <SettingsPage />}
-
-          {/*
-          // {showPostPaymentButton && (
-          //   <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[9999]" data-post-payment="true">
-          //     <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 flex flex-col items-center">
-          //       <h2 className="text-xl font-bold mb-4">Finish Account Setup</h2>
-          //       <p className="mb-4 text-gray-700">Click the button below to complete your account creation.</p>
-          //       <button
-          //         className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold text-lg transition-colors"
-          //         onClick={async () => {
-          //           setShowPostPaymentButton(false);
-          //           await handlePostPaymentSignup();
-          //         }}
-          //       >
-          //         Finish Account Setup
-          //       </button>
-          //     </div>
-          //   </div>
-          // )}
-          */}
-
-          {showPostPaymentButton && (
-            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[9999] p-4" data-post-payment="true">
-              <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 flex flex-col items-center">
-                {/* Success Icon */}
-                <div className="text-6xl mb-4 animate-bounce">🎉</div>
-                
-                {/* Title */}
-                <h2 className="text-2xl font-bold mb-4 text-center text-gray-900">
-                  Payment Successful!
-                </h2>
-                
-                {/* Description */}
-                <div className="text-center mb-6">
-                  <p className="text-gray-700 mb-2">
-                    Your subscription is active! Now let's finish setting up your account.
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    {(() => {
-                      const pendingGoogleSignup = localStorage.getItem("pendingGoogleSignup");
-                      if (pendingGoogleSignup) {
-                        const signupData = JSON.parse(pendingGoogleSignup);
-                        return `Please sign in with your Google account: ${signupData.email}`;
-                      }
-                      return "Complete your account setup to start using Farm Fam.";
-                    })()}
-                  </p>
-                </div>
-
-                {/* Action Button */}
-                <button
-                  className="w-full bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white px-6 py-4 rounded-xl font-semibold text-lg transition-all duration-200 transform hover:scale-105 shadow-lg mb-4"
-                  onClick={async () => {
-                    await handlePostPaymentSignup();
-                  }}
-                >
-                  {(() => {
-                    const pendingGoogleSignup = localStorage.getItem("pendingGoogleSignup");
-                    return pendingGoogleSignup ? "Sign in with Google" : "Complete Setup";
-                  })()}
-                </button>
-
-                {/* Help Text */}
-                <div className="text-center">
-                  <p className="text-xs text-gray-500 mb-2">
-                    Having trouble? Make sure you're using the same account you signed up with.
-                  </p>
-                  <button
-                    onClick={() => {
-                      if (confirm("Are you sure you want to cancel? You can always complete setup later from the login page.")) {
-                        setShowPostPaymentButton(false);
-                        // Don't clear the pending signup data in case they want to try again
-                      }
-                    }}
-                    className="text-sm text-gray-400 hover:text-gray-600 underline"
-                  >
-                    Skip for now
-                </button>
-                </div>
-              </div>
-            </div>
-          )}
 
         </div>
       );
