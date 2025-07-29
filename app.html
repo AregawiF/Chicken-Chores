@@ -512,7 +512,6 @@
                 currentFirestoreListener = onSnapshot(userDocRef, (docSnap) => {
                     setIsLoading(true);
                     if (docSnap.exists()) {
-                        console.log("Firestore data received.");
                         const data = docSnap.data();
 
                         // Load data from Firestore
@@ -614,7 +613,6 @@
                 try {
                     // Using { merge: true } is a good practice, though we are saving the whole object.
                     await setDoc(userDocRef, dataToSave, { merge: true });
-                    console.log("✅ Data saved to Firestore.");
                     navigateToPage(PAGES.TASKS);
                 } catch (error) {
                     console.error("Error saving data to Firestore:", error);
@@ -1198,7 +1196,6 @@
             window.firebaseAuth.googleProvider
           );
           const user = result.user;
-          console.log("Google login successful for:", user.email);
 
           // Check if there's existing pending signup data for this email
           const pendingGoogleSignup = localStorage.getItem("pendingGoogleSignup");
@@ -1912,12 +1909,55 @@
                 };
               } else {
                 console.warn("No subscription found in Stripe response");
+                // Try to determine plan from URL parameters or localStorage
+                const urlParams = new URLSearchParams(window.location.search);
+                const planFromUrl = urlParams.get('plan');
+                if (planFromUrl) {
+                  subscriptionData.plan = planFromUrl;
+                }
               }
             } else {
               console.warn("Failed to fetch subscription data from Stripe");
+              // Try to determine plan from URL parameters
+              const urlParams = new URLSearchParams(window.location.search);
+              const planFromUrl = urlParams.get('plan');
+              if (planFromUrl) {
+                subscriptionData.plan = planFromUrl;
+              }
             }
           } catch (error) {
             console.warn("Could not fetch subscription data, using defaults:", error);
+            // Try to determine plan from URL parameters as last resort
+            const urlParams = new URLSearchParams(window.location.search);
+            const planFromUrl = urlParams.get('plan');
+            if (planFromUrl) {
+              subscriptionData.plan = planFromUrl;
+            }
+          }
+
+          // Ensure we have a valid plan - if still null, try to infer from payment amount
+          if (!subscriptionData.plan) {
+            // Check if we can determine the plan from the checkout session
+            try {
+              const urlParams = new URLSearchParams(window.location.search);
+              const sessionId = urlParams.get('session_id');
+              if (sessionId) {
+                // Try to get session details to determine plan
+                const sessionResponse = await fetch('/api/get-session-details', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ sessionId })
+                });
+                if (sessionResponse.ok) {
+                  const sessionData = await sessionResponse.json();
+                  if (sessionData.plan) {
+                    subscriptionData.plan = sessionData.plan;
+                  }
+                }
+              }
+            } catch (error) {
+              console.warn("Could not get session details:", error);
+            }
           }
 
           await initializeFirestoreData(user, signupData.familyName, subscriptionData);
@@ -2709,7 +2749,8 @@
                                'No Active Subscription'}
                             </div>
                             <div className="text-sm text-gray-600">
-                              {subscriptionData.status === 'active' ? `${subscriptionData.plan} subscription` :
+                              {subscriptionData.status === 'active' ? 
+                                (subscriptionData.plan ? `${subscriptionData.plan} subscription` : 'Active subscription') :
                                subscriptionData.status === 'expired' ? 'Your subscription has expired. Renew to continue.' :
                                subscriptionData.status === 'cancelled' ? 'You cancelled your subscription' :
                                'Subscribe to access all features'}
@@ -2732,7 +2773,9 @@
                           <div className="text-sm space-y-2">
                             <div className="flex justify-between">
                               <span className="text-gray-600">Plan:</span>
-                              <span className="text-gray-800 font-medium capitalize">{subscriptionData.plan || 'N/A'}</span>
+                              <span className="text-gray-800 font-medium capitalize">
+                                {subscriptionData.plan ? subscriptionData.plan : 'Premium'}
+                              </span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-gray-600">
@@ -2743,14 +2786,16 @@
                               }`}>
                                 {subscriptionData.subscriptionEndDate ? 
                                   new Date(subscriptionData.subscriptionEndDate).toLocaleDateString() : 
-                                  'N/A'
+                                  'To be determined'
                                 }
                               </span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-gray-600">Price:</span>
                               <span className="text-gray-800 font-medium">
-                                {subscriptionData.plan === 'yearly' ? '$29.99/year' : '$4.99/month'}
+                                {subscriptionData.plan === 'yearly' ? '$29.99/year' : 
+                                 subscriptionData.plan === 'monthly' ? '$4.99/month' : 
+                                 '$29.99/year'}
                               </span>
                             </div>
                           </div>
@@ -2800,6 +2845,46 @@
                                 className="w-full bg-red-600 hover:bg-red-700 text-white p-2 rounded-lg text-sm transition-colors"
                               >
                                 Cancel Subscription
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    // Refresh subscription data from Stripe
+                                    const response = await fetch('/api/restore-subscription', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({
+                                        userId: currentUser?.uid,
+                                        email: currentUser?.email
+                                      })
+                                    });
+
+                                    if (response.ok) {
+                                      const result = await response.json();
+                                      if (result.subscription) {
+                                        const refreshedData = {
+                                          status: 'active',
+                                          plan: result.subscription.plan,
+                                          subscriptionEndDate: result.subscription.current_period_end,
+                                          customerId: result.subscription.customer,
+                                          subscriptionId: result.subscription.id
+                                        };
+                                        setSubscriptionData(refreshedData);
+                                        alert("✅ Subscription data refreshed successfully!");
+                                      } else {
+                                        alert("No active subscription found. Please contact support.");
+                                      }
+                                    } else {
+                                      throw new Error('Failed to refresh subscription');
+                                    }
+                                  } catch (error) {
+                                    console.error("Error refreshing subscription:", error);
+                                    alert("Failed to refresh subscription data. Please try again.");
+                                  }
+                                }}
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg text-sm transition-colors"
+                              >
+                                🔄 Refresh Subscription Data
                               </button>
                             </div>
                           ) : subscriptionData.status === 'expired' ? (

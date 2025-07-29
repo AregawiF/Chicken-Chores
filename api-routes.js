@@ -372,6 +372,53 @@ router.post('/cancel-subscription', async (req, res) => {
   }
 });
 
+// 5. GET SESSION DETAILS
+router.post('/get-session-details', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Missing sessionId' });
+    }
+
+    console.log('Getting session details for:', sessionId);
+
+    // Retrieve the checkout session from Stripe
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['subscription', 'line_items']
+    });
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Extract plan information from the session
+    let plan = null;
+    if (session.metadata && session.metadata.plan) {
+      plan = session.metadata.plan;
+    } else if (session.line_items && session.line_items.data.length > 0) {
+      // Try to determine plan from line items
+      const lineItem = session.line_items.data[0];
+      if (lineItem.price && lineItem.price.recurring) {
+        plan = lineItem.price.recurring.interval === 'year' ? 'yearly' : 'monthly';
+      }
+    }
+
+    console.log('Session details retrieved. Plan:', plan);
+
+    res.json({
+      sessionId: session.id,
+      plan: plan,
+      customerId: session.customer,
+      subscriptionId: session.subscription
+    });
+
+  } catch (error) {
+    console.error('Error getting session details:', error);
+    res.status(500).json({ error: 'Failed to get session details', details: error.message });
+  }
+});
+
 // Helper function to update user subscription in Firebase
 async function updateUserSubscription(userId, subscriptionData) {
   if (!userId) {
